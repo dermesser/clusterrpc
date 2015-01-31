@@ -48,7 +48,7 @@ func TestSizebufFuncs(t *testing.T) {
 	numbers := []uint64{3, 3321 << 5, 232111, 3332232, 1 << 56, 1 << 57, 1 << 63, 889991212}
 
 	for _, v := range numbers {
-		var sizebuf [8]byte = lengthToBytes(v)
+		var sizebuf [8]byte = lengthToSizebuf(v)
 		var back uint64 = sizebufToLength(sizebuf)
 
 		if back != v {
@@ -61,7 +61,7 @@ func BenchmarkToSizebuf(b *testing.B) {
 	numbers := []uint64{3, 3321 << 5, 232111, 3332232, 1 << 56, 1 << 57, 1 << 63, 889991212}
 
 	for i := 0; i < b.N; i++ {
-		var _ [8]byte = lengthToBytes(numbers[i%8])
+		var _ [8]byte = lengthToSizebuf(numbers[i%8])
 	}
 }
 
@@ -69,7 +69,7 @@ func BenchmarkToFromSizebuf(b *testing.B) {
 	numbers := []uint64{3, 3321 << 5, 232111, 3332232, 1 << 56, 1 << 57, 1 << 63, 889991212}
 
 	for i := 0; i < b.N; i++ {
-		var sb [8]byte = lengthToBytes(numbers[i%8])
+		var sb [8]byte = lengthToSizebuf(numbers[i%8])
 		var _ uint64 = sizebufToLength(sb)
 	}
 }

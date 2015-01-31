@@ -22,8 +22,8 @@ func NewResponse() proto.RPCResponse {
 	return proto.RPCResponse{SequenceNumber: new(uint64), ResponseData: new(string), ResponseStatus: new(proto.RPCResponse_Status)}
 }
 
-// Converts a number to a little-endian byte array
-func lengthToBytes(l uint64) [8]byte {
+// Converts a number to a little-endian byte array, a so-called Sizebuf
+func lengthToSizebuf(l uint64) [8]byte {
 	var sizebuf [8]byte
 
 	var i int = 7
@@ -41,7 +41,7 @@ func lengthToBytes(l uint64) [8]byte {
 	return sizebuf
 }
 
-// Gets the value from an encoded size number (lengthToBytes())
+// Gets the value from an encoded size number (a.k.a. Sizebuf, from lengthToSizebuf())
 func sizebufToLength(b [8]byte) uint64 {
 	var size uint64 = 0
 
@@ -61,18 +61,15 @@ func sizebufToLength(b [8]byte) uint64 {
 }
 
 func RequestToBytes(r proto.RPCRequest) []byte {
-	serialized, err := pb.Marshal(&r)
-
-	if err != nil {
-		return nil
-	}
-
-	return BytesToLengthPrefixed(serialized)
+	return ProtoToLengthPrefixed(&r)
 }
 
 func ResponseToBytes(r proto.RPCResponse) []byte {
+	return ProtoToLengthPrefixed(&r)
+}
 
-	serialized, err := pb.Marshal(&r)
+func ProtoToLengthPrefixed(r pb.Message) []byte {
+	serialized, err := pb.Marshal(r)
 
 	if err != nil {
 		return nil
@@ -84,7 +81,7 @@ func ResponseToBytes(r proto.RPCResponse) []byte {
 func BytesToLengthPrefixed(b []byte) []byte {
 	buf := new(bytes.Buffer)
 
-	var sizebuf [8]byte = lengthToBytes(uint64(len(b)))
+	var sizebuf [8]byte = lengthToSizebuf(uint64(len(b)))
 	buf.Write(sizebuf[:])
 	buf.Write(b)
 
