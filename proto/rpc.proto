@@ -1,0 +1,29 @@
+package proto;
+
+message RPCRequest {
+    required uint64 sequence_number = 1;
+    required string srvc = 2;
+    required string procedure = 3;
+    required string data = 4;
+}
+
+message RPCResponse {
+    required uint64 sequence_number = 1;
+
+    enum Status {
+        STATUS_UNKNOWN = 0;
+        STATUS_OK = 1;
+        STATUS_NOT_FOUND = 2;
+        STATUS_REDIRECT = 3;
+        STATUS_NOT_OK = 4;
+        STATUS_SERVER_ERROR = 5;
+    }
+
+    optional string redir_host = 2;
+    optional uint32 redir_port = 3;
+
+    optional string response_data = 4;
+
+    required Status response_status = 5;
+}
+
