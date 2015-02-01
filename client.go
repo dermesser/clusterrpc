@@ -76,6 +76,17 @@ func (cl *Client) Close() {
 	cl.channel = nil
 }
 
+/*
+Call a remote procedure service.endpoint with data as input.
+
+Returns either a byte array and nil as error or a status string as the error string.
+Returned strings are
+
+        "STATUS_OK" // Not returned in reality
+        "STATUS_NOT_FOUND" // Invalid service or endpoint
+        "STATUS_NOT_OK" // Handler returned an error.
+        "STATUS_SERVER_ERROR" // The clusterrpc server experienced an internal server error
+*/
 func (cl *Client) Request(data []byte, service, endpoint string) ([]byte, error) {
 	rqproto := proto.RPCRequest{}
 
@@ -110,6 +121,7 @@ func (cl *Client) Request(data []byte, service, endpoint string) ([]byte, error)
 		cl.channel.SetDeadline(time.Now().Add(cl.timeout))
 	}
 	respprotobytes, rerr := readSizePrefixedMessage(cl.channel)
+
 	if rerr != nil {
 		cl.logger.Println(service+"."+endpoint, "Couldn't read message")
 		return nil, rerr
@@ -121,6 +133,11 @@ func (cl *Client) Request(data []byte, service, endpoint string) ([]byte, error)
 
 	if err != nil {
 		cl.logger.Println(err.Error())
+		return nil, err
+	}
+
+	if respproto.GetResponseStatus() != proto.RPCResponse_STATUS_OK {
+		err = RequestError{status: respproto.GetResponseStatus(), message: respproto.GetErrorMessage()}
 		return nil, err
 	}
 

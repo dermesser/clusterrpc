@@ -41,7 +41,8 @@ type Server struct {
 	services map[string]*service
 	logger   *log.Logger
 	// The timeout only applies on client connections (R/W), not the Listener
-	timeout time.Duration
+	timeout  time.Duration
+	loglevel LOGLEVEL_T
 }
 
 /*
@@ -61,6 +62,7 @@ func NewServer(laddr string, port int) (srv *Server) {
 	srv = new(Server)
 	srv.services = make(map[string]*service)
 	srv.logger = log.New(os.Stderr, "clusterrpc.Server: ", log.Lmicroseconds)
+	srv.loglevel = LOGLEVEL_WARNINGS
 
 	addr := new(net.TCPAddr)
 	addr.IP = net.ParseIP(laddr)
@@ -105,6 +107,13 @@ func (srv *Server) SetClientRWTimeout(d time.Duration) {
 }
 
 /*
+Set loglevel of this server.
+*/
+func (srv *Server) SetLoglevel(l LOGLEVEL_T) {
+	srv.loglevel = l
+}
+
+/*
 Add a new endpoint (i.e. a handler); svc is the "namespace" in which to register the handler,
 endpoint the name with which the handler can be identified from the outside. The service
 is created implicitly
@@ -118,10 +127,16 @@ func (srv *Server) RegisterEndpoint(svc, endpoint string, handler Endpoint) (err
 		srv.services[svc] = new(service)
 		srv.services[svc].endpoints = make(map[string]Endpoint)
 	} else if _, ok = srv.services[svc].endpoints[endpoint]; ok {
+		if srv.loglevel >= LOGLEVEL_WARNINGS {
+			srv.logger.Println("Trying to register existing endpoint: ", svc+"."+endpoint)
+		}
 		err = errors.New("Endpoint already registered; not overwritten")
 		return
 	}
 
+	if srv.loglevel >= LOGLEVEL_DEBUG {
+		srv.logger.Println("Registered endpoint: ", svc+"."+endpoint)
+	}
 	srv.services[svc].endpoints[endpoint] = handler
 	err = nil
 	return
@@ -138,12 +153,21 @@ func (srv *Server) UnregisterEndpoint(svc, endpoint string) (err error) {
 	_, ok := srv.services[svc]
 
 	if !ok {
+		if srv.loglevel >= LOGLEVEL_WARNINGS {
+			srv.logger.Println("Trying to unregister non-existing endpoint: ", svc+"."+endpoint)
+		}
 		err = errors.New("No such service")
 		return
 	} else if _, ok = srv.services[svc].endpoints[endpoint]; !ok {
+		if srv.loglevel >= LOGLEVEL_WARNINGS {
+			srv.logger.Println("Trying to unregister non-existing endpoint: ", svc+"."+endpoint)
+		}
 		err = errors.New("No such endpoint")
 		return
 	} else {
+		if srv.loglevel >= LOGLEVEL_DEBUG {
+			srv.logger.Println("Registered endpoint: ", svc+"."+endpoint)
+		}
 		delete(srv.services[svc].endpoints, endpoint)
 	}
 
@@ -156,8 +180,10 @@ func (srv *Server) AcceptRequests() error {
 	for true {
 		conn, err := srv.sock.AcceptTCP()
 
+		if srv.loglevel >= LOGLEVEL_INFO {
+			srv.logger.Println("Accepted connection from", conn.RemoteAddr().String())
+		}
 		if err == nil {
-			srv.logger.Println("Received request.")
 			go srv.handleRequest(conn)
 		} else if err.(net.Error).Temporary() || err.(net.Error).Timeout() {
 			continue
@@ -169,100 +195,129 @@ func (srv *Server) AcceptRequests() error {
 	return nil
 }
 
-// Examine the request, call the handler, send response
+// Examine incoming requests, act upon them until the connection is closed.
 func (srv *Server) handleRequest(conn *net.TCPConn) {
-	// Read one record
+	for true {
+		if srv.timeout > 0 {
+			conn.SetDeadline(time.Now().Add(srv.timeout))
+		}
+		// Read one record
+		request, err := readSizePrefixedMessage(conn)
 
-	if srv.timeout > 0 {
-		conn.SetDeadline(time.Now().Add(srv.timeout))
-	}
-	request, err := readSizePrefixedMessage(conn)
+		if err != nil {
+			if srv.loglevel >= LOGLEVEL_INFO {
+				srv.logger.Println("Network error on reading from accepted connection (non-critical if EOF):", err.Error())
+			}
+			conn.Close()
+			return
+		} else {
+			if srv.loglevel >= LOGLEVEL_DEBUG {
+				srv.logger.Println("Received request.")
+			}
+		}
 
-	if err != nil {
-		srv.logger.Println("Network error on reading from accepted connection:", err.Error())
-		return
-	}
+		rqproto := proto.RPCRequest{}
+		pberr := pb.Unmarshal(request, &rqproto)
 
-	rqproto := proto.RPCRequest{}
-	pb.Unmarshal(request, &rqproto)
+		if pberr != nil {
+			if srv.loglevel >= LOGLEVEL_ERRORS {
+				srv.logger.Println("PB unmarshaling error:", pberr.Error())
+			}
+			conn.Close()
+			return
+		}
 
-	// Find matching endpoint
-	srvc, srvc_found := srv.services[*rqproto.Srvc]
+		// Find matching endpoint
+		srvc, srvc_found := srv.services[rqproto.GetSrvc()]
 
-	if !srvc_found {
-		srv.sendError(conn, rqproto, proto.RPCResponse_STATUS_NOT_FOUND)
-		return
-	} else {
-		if handler, endpoint_found := srvc.endpoints[rqproto.GetProcedure()]; !endpoint_found {
+		if !srvc_found {
+			if srv.loglevel >= LOGLEVEL_WARNINGS {
+				srv.logger.Println("NOT_FOUND response to request for service", rqproto.GetSrvc())
+			}
 			srv.sendError(conn, rqproto, proto.RPCResponse_STATUS_NOT_FOUND)
 			return
 		} else {
-			response_data, err := handler([]byte(rqproto.GetData()))
-
-			rpproto := proto.RPCResponse{}
-			rpproto.SequenceNumber = rqproto.SequenceNumber
-			rpproto.ResponseStatus = new(proto.RPCResponse_Status)
-
-			if err == nil {
-				*rpproto.ResponseStatus = proto.RPCResponse_STATUS_OK
-			} else {
-				*rpproto.ResponseStatus = proto.RPCResponse_STATUS_NOT_OK
-			}
-
-			rpproto.ResponseData = pb.String(string(response_data))
-			srv.logger.Println("Length of response:", len(rpproto.GetResponseData()))
-
-			if err != nil {
-				rpproto.ErrorMessage = pb.String(err.Error())
-			}
-
-			response_serialized, pberr := protoToLengthPrefixed(&rpproto)
-
-			if pberr != nil {
-				srv.sendError(conn, rqproto, proto.RPCResponse_STATUS_SERVER_ERROR)
-				srv.logger.Println("Error when serializing RPCResponse:", pberr.Error())
-
-				if rqproto.GetConnectionClose() {
-					conn.Close()
+			if handler, endpoint_found := srvc.endpoints[rqproto.GetProcedure()]; !endpoint_found {
+				if srv.loglevel >= LOGLEVEL_WARNINGS {
+					srv.logger.Println("NOT_FOUND response to request for service.endpoint", rqproto.GetSrvc()+"."+rqproto.GetProcedure())
 				}
+				srv.sendError(conn, rqproto, proto.RPCResponse_STATUS_NOT_FOUND)
+				return
 			} else {
-				if srv.timeout > 0 {
-					conn.SetDeadline(time.Now().Add(srv.timeout))
+				response_data, err := handler([]byte(rqproto.GetData()))
+
+				rpproto := proto.RPCResponse{}
+				rpproto.SequenceNumber = rqproto.SequenceNumber
+				rpproto.ResponseStatus = new(proto.RPCResponse_Status)
+
+				if err == nil {
+					*rpproto.ResponseStatus = proto.RPCResponse_STATUS_OK
+				} else {
+					*rpproto.ResponseStatus = proto.RPCResponse_STATUS_NOT_OK
+					rpproto.ErrorMessage = pb.String(err.Error())
 				}
-				n, werr := conn.Write(response_serialized)
 
-				if werr != nil && (werr.(net.Error).Temporary() || werr.(net.Error).Timeout()) {
-					srv.logger.Println("Timeout or temporary error, retrying")
-					i := 0
+				rpproto.ResponseData = pb.String(string(response_data))
 
-					for i < 2 && (werr.(net.Error).Timeout() || werr.(net.Error).Temporary()) {
-						if srv.timeout > 0 {
-							conn.SetDeadline(time.Now().Add(srv.timeout))
-						}
-						n, werr = conn.Write(response_serialized)
+				response_serialized, pberr := protoToLengthPrefixed(&rpproto)
 
-						if n == len(response_serialized) && werr == nil {
-							break
-						}
+				if pberr != nil {
+					srv.sendError(conn, rqproto, proto.RPCResponse_STATUS_SERVER_ERROR)
 
-						i++
+					if srv.loglevel >= LOGLEVEL_ERRORS {
+						srv.logger.Println("Error when serializing RPCResponse:", pberr.Error())
 					}
-				} else if werr != nil {
-					srv.logger.Println("Error during sending: ", werr.Error())
-					conn.Close()
-					return
-				} else if n < len(response_serialized) {
-					srv.logger.Println("Couldn't send whole message.")
-				}
 
-				if rqproto.GetConnectionClose() {
-					conn.Close()
+					if rqproto.GetConnectionClose() {
+						conn.Close()
+					}
+				} else {
+					if srv.timeout > 0 {
+						conn.SetDeadline(time.Now().Add(srv.timeout))
+					}
+					n, werr := conn.Write(response_serialized)
+
+					if werr != nil && (werr.(net.Error).Temporary() || werr.(net.Error).Timeout()) {
+						if srv.loglevel >= LOGLEVEL_WARNINGS {
+							srv.logger.Println("Timeout or temporary error, retrying twice")
+						}
+						i := 0
+
+						for i < 2 && (werr.(net.Error).Timeout() || werr.(net.Error).Temporary()) {
+							if srv.timeout > 0 {
+								conn.SetDeadline(time.Now().Add(srv.timeout))
+							}
+							n, werr = conn.Write(response_serialized)
+
+							if n == len(response_serialized) && werr == nil {
+								break
+							}
+
+							i++
+						}
+					} else if werr != nil {
+						if srv.loglevel >= LOGLEVEL_WARNINGS {
+							srv.logger.Println("Error during sending: ", werr.Error())
+						}
+						conn.Close()
+						return
+					} else if n < len(response_serialized) {
+						if srv.loglevel >= LOGLEVEL_WARNINGS {
+							srv.logger.Println("Couldn't send whole message:", n, "out of", len(response_serialized))
+						}
+					}
+
+					if rqproto.GetConnectionClose() {
+						conn.Close()
+						return
+					}
+					if srv.loglevel >= LOGLEVEL_DEBUG {
+						srv.logger.Println("Sent response to", rqproto.GetSequenceNumber())
+					}
 				}
-				srv.logger.Println("Sent response")
 			}
 		}
 	}
-
 }
 
 func (srv *Server) sendError(c *net.TCPConn, rq proto.RPCRequest, s proto.RPCResponse_Status) {

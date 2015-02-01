@@ -11,6 +11,7 @@ package main
 
 import (
 	"clusterrpc"
+	"errors"
 	"flag"
 	"fmt"
 )
@@ -22,9 +23,17 @@ func echoHandler(i []byte) (o []byte, e error) {
 	return
 }
 
+func errorReturningHandler(i []byte) (o []byte, err error) {
+	err = errors.New("Some error occurred in handler, abort")
+	o = nil
+	return
+}
+
 func server() {
 	srv := clusterrpc.NewServer("localhost", 9000)
+	srv.SetLoglevel(clusterrpc.LOGLEVEL_DEBUG)
 	srv.RegisterEndpoint("EchoService", "Echo", echoHandler)
+	srv.RegisterEndpoint("EchoService", "Error", errorReturningHandler)
 
 	e := srv.AcceptRequests()
 
@@ -35,6 +44,7 @@ func server() {
 
 func client() {
 	cl, err := clusterrpc.NewClient("echo1_cl", "localhost", 9000)
+	defer cl.Close()
 
 	if err != nil {
 		fmt.Println(err.Error())
@@ -48,7 +58,15 @@ func client() {
 		return
 	} else {
 		fmt.Println("Received response:", string(resp), len(resp))
-		cl.Close()
+	}
+
+	resp, err = cl.Request([]byte("helloworld"), "EchoService", "Error")
+
+	if err != nil {
+		fmt.Println(err.Error())
+		return
+	} else {
+		fmt.Println("Received response:", string(resp), len(resp))
 	}
 }
 
