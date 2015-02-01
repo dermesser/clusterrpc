@@ -196,7 +196,9 @@ func (srv *Server) AcceptRequests() error {
 }
 
 // Examine incoming requests, act upon them until the connection is closed.
+// TODO Maybe break this up a little bit?
 func (srv *Server) handleRequest(conn *net.TCPConn) {
+	// Handle requests on one connection until EOF breaks the loop
 	for true {
 		if srv.timeout > 0 {
 			conn.SetDeadline(time.Now().Add(srv.timeout))
@@ -247,7 +249,7 @@ func (srv *Server) handleRequest(conn *net.TCPConn) {
 				response_data, err := handler([]byte(rqproto.GetData()))
 
 				rpproto := proto.RPCResponse{}
-				rpproto.SequenceNumber = rqproto.SequenceNumber
+				rpproto.SequenceNumber = pb.Uint64(rqproto.GetSequenceNumber())
 				rpproto.ResponseStatus = new(proto.RPCResponse_Status)
 
 				if err == nil {
@@ -265,7 +267,7 @@ func (srv *Server) handleRequest(conn *net.TCPConn) {
 					srv.sendError(conn, rqproto, proto.RPCResponse_STATUS_SERVER_ERROR)
 
 					if srv.loglevel >= LOGLEVEL_ERRORS {
-						srv.logger.Println("Error when serializing RPCResponse:", pberr.Error())
+						srv.logger.Println(rqproto.GetSequenceNumber(), "Error when serializing RPCResponse:", pberr.Error())
 					}
 
 					if rqproto.GetConnectionClose() {
@@ -279,7 +281,7 @@ func (srv *Server) handleRequest(conn *net.TCPConn) {
 
 					if werr != nil && (werr.(net.Error).Temporary() || werr.(net.Error).Timeout()) {
 						if srv.loglevel >= LOGLEVEL_WARNINGS {
-							srv.logger.Println("Timeout or temporary error, retrying twice")
+							srv.logger.Println(rqproto.GetSequenceNumber(), "Timeout or temporary error, retrying twice")
 						}
 						i := 0
 
@@ -295,15 +297,22 @@ func (srv *Server) handleRequest(conn *net.TCPConn) {
 
 							i++
 						}
+						if i == 2 {
+							if srv.loglevel >= LOGLEVEL_ERRORS {
+								srv.logger.Println(rqproto.GetSequenceNumber(), "Couldn't send message in three attempts, closing connection")
+							}
+							conn.Close()
+							return
+						}
 					} else if werr != nil {
 						if srv.loglevel >= LOGLEVEL_WARNINGS {
-							srv.logger.Println("Error during sending: ", werr.Error())
+							srv.logger.Println(rqproto.GetSequenceNumber(), "Error during sending: ", werr.Error())
 						}
 						conn.Close()
 						return
 					} else if n < len(response_serialized) {
 						if srv.loglevel >= LOGLEVEL_WARNINGS {
-							srv.logger.Println("Couldn't send whole message:", n, "out of", len(response_serialized))
+							srv.logger.Println(rqproto.GetSequenceNumber(), "Couldn't send whole message:", n, "out of", len(response_serialized))
 						}
 					}
 
@@ -312,7 +321,7 @@ func (srv *Server) handleRequest(conn *net.TCPConn) {
 						return
 					}
 					if srv.loglevel >= LOGLEVEL_DEBUG {
-						srv.logger.Println("Sent response to", rqproto.GetSequenceNumber())
+						srv.logger.Println(rqproto.GetSequenceNumber(), "Sent response to", rqproto.GetSequenceNumber())
 					}
 				}
 			}

@@ -44,12 +44,12 @@ func server() {
 
 func client() {
 	cl, err := clusterrpc.NewClient("echo1_cl", "localhost", 9000)
-	defer cl.Close()
-
 	if err != nil {
 		fmt.Println(err.Error())
 		return
 	}
+	defer cl.Close()
+	cl.SetLoglevel(clusterrpc.LOGLEVEL_DEBUG)
 
 	resp, err := cl.Request([]byte("helloworld"), "EchoService", "Echo")
 

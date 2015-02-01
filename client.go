@@ -19,6 +19,7 @@ type Client struct {
 	timeout         time.Duration
 	// Used for default calls
 	default_service, default_endpoint string
+	loglevel                          LOGLEVEL_T
 }
 
 /*
@@ -40,6 +41,7 @@ func NewClient(client_name, raddr string, rport int) (cl *Client, e error) {
 	cl.channel = conn
 	cl.sequence_number = 0
 	cl.logger = log.New(os.Stderr, "clusterrpc.Client "+client_name+": ", log.Lmicroseconds)
+	cl.loglevel = LOGLEVEL_ERRORS
 
 	return
 }
@@ -59,6 +61,13 @@ func (cl *Client) SetLogger(l *log.Logger) {
 }
 
 /*
+Define which errors/situations to log
+*/
+func (cl *Client) SetLoglevel(ll LOGLEVEL_T) {
+	cl.loglevel = ll
+}
+
+/*
 Sets the default service and endpoint; those are used for calls to RequestDefault()
 */
 func (cl *Client) SetDefault(service, endpoint string) {
@@ -71,7 +80,9 @@ Disable the client. Following calls will result in nil dereference.
 TODO: Maybe do not do the above stated.
 */
 func (cl *Client) Close() {
-	cl.logger.Println("Closing client channel")
+	if cl.loglevel >= LOGLEVEL_INFO {
+		cl.logger.Println("Closing client channel")
+	}
 	cl.channel.Close()
 	cl.channel = nil
 }
@@ -86,6 +97,8 @@ Returned strings are
         "STATUS_NOT_FOUND" // Invalid service or endpoint
         "STATUS_NOT_OK" // Handler returned an error.
         "STATUS_SERVER_ERROR" // The clusterrpc server experienced an internal server error
+
+Returns nil,nil after a timeout
 */
 func (cl *Client) Request(data []byte, service, endpoint string) ([]byte, error) {
 	rqproto := proto.RPCRequest{}
@@ -108,11 +121,22 @@ func (cl *Client) Request(data []byte, service, endpoint string) ([]byte, error)
 	}
 	n, werr := cl.channel.Write(rq_serialized)
 
+	if cl.loglevel >= LOGLEVEL_DEBUG {
+		cl.logger.Println(service+"."+endpoint, rqproto.GetSequenceNumber(), "Sent request")
+	}
+
 	if werr != nil {
-		cl.logger.Println(werr.Error())
+		if cl.loglevel >= LOGLEVEL_ERRORS {
+			cl.logger.Println(service+"."+endpoint, rqproto.GetSequenceNumber(), werr.Error())
+		}
+		if werr.(net.Error).Timeout() || werr.(net.Error).Temporary() {
+			return nil, nil
+		}
 		return nil, werr
 	} else if n < len(rq_serialized) {
-		cl.logger.Println(service+"."+endpoint, "Sent less bytes than needed")
+		if cl.loglevel >= LOGLEVEL_ERRORS {
+			cl.logger.Println(service+"."+endpoint, rqproto.GetSequenceNumber(), "Sent less bytes than provided")
+		}
 		cl.channel.Close()
 		return nil, errors.New("Couldn't send complete messsage")
 	}
@@ -123,8 +147,13 @@ func (cl *Client) Request(data []byte, service, endpoint string) ([]byte, error)
 	respprotobytes, rerr := readSizePrefixedMessage(cl.channel)
 
 	if rerr != nil {
-		cl.logger.Println(service+"."+endpoint, "Couldn't read message")
+		if cl.loglevel >= LOGLEVEL_ERRORS {
+			cl.logger.Println(service+"."+endpoint, rqproto.GetSequenceNumber(), "Couldn't read message:", rerr.Error())
+		}
 		return nil, rerr
+	}
+	if cl.loglevel >= LOGLEVEL_DEBUG {
+		cl.logger.Println(service+"."+endpoint, rqproto.GetSequenceNumber(), "Received response")
 	}
 
 	respproto := proto.RPCResponse{}
@@ -132,11 +161,16 @@ func (cl *Client) Request(data []byte, service, endpoint string) ([]byte, error)
 	err := pb.Unmarshal(respprotobytes, &respproto)
 
 	if err != nil {
-		cl.logger.Println(err.Error())
+		if cl.loglevel >= LOGLEVEL_ERRORS {
+			cl.logger.Println(err.Error())
+		}
 		return nil, err
 	}
 
 	if respproto.GetResponseStatus() != proto.RPCResponse_STATUS_OK {
+		if cl.loglevel >= LOGLEVEL_WARNINGS {
+			cl.logger.Println(service+"."+endpoint, rqproto.GetSequenceNumber(), "Received status other than OK")
+		}
 		err = RequestError{status: respproto.GetResponseStatus(), message: respproto.GetErrorMessage()}
 		return nil, err
 	}
