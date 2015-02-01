@@ -48,7 +48,7 @@ type Server struct {
 /*
 Type of a function that is called when the corresponding endpoint is requested.
 */
-type Endpoint (func([]byte) ([]byte, error))
+type Endpoint (func(*Context))
 
 type service struct {
 	endpoints map[string]Endpoint
@@ -246,20 +246,11 @@ func (srv *Server) handleRequest(conn *net.TCPConn) {
 				srv.sendError(conn, rqproto, proto.RPCResponse_STATUS_NOT_FOUND)
 				return
 			} else {
-				response_data, err := handler([]byte(rqproto.GetData()))
+				cx := NewContext([]byte(rqproto.GetData()))
+				handler(cx)
 
-				rpproto := proto.RPCResponse{}
+				rpproto := srv.contextToRPCResponse(cx)
 				rpproto.SequenceNumber = pb.Uint64(rqproto.GetSequenceNumber())
-				rpproto.ResponseStatus = new(proto.RPCResponse_Status)
-
-				if err == nil {
-					*rpproto.ResponseStatus = proto.RPCResponse_STATUS_OK
-				} else {
-					*rpproto.ResponseStatus = proto.RPCResponse_STATUS_NOT_OK
-					rpproto.ErrorMessage = pb.String(err.Error())
-				}
-
-				rpproto.ResponseData = pb.String(string(response_data))
 
 				response_serialized, pberr := protoToLengthPrefixed(&rpproto)
 
@@ -327,6 +318,28 @@ func (srv *Server) handleRequest(conn *net.TCPConn) {
 			}
 		}
 	}
+}
+
+func (srv *Server) contextToRPCResponse(cx *Context) proto.RPCResponse {
+	rpproto := proto.RPCResponse{}
+	rpproto.ResponseStatus = new(proto.RPCResponse_Status)
+
+	if !cx.failed {
+		*rpproto.ResponseStatus = proto.RPCResponse_STATUS_OK
+	} else {
+		*rpproto.ResponseStatus = proto.RPCResponse_STATUS_NOT_OK
+		rpproto.ErrorMessage = pb.String(cx.errorMessage)
+	}
+
+	rpproto.ResponseData = pb.String(string(cx.result))
+
+	if cx.redirected {
+		rpproto.RedirHost = pb.String(cx.redir_host)
+		rpproto.RedirPort = pb.Int32(cx.redir_port)
+		*rpproto.ResponseStatus = proto.RPCResponse_STATUS_REDIRECT
+	}
+
+	return rpproto
 }
 
 func (srv *Server) sendError(c *net.TCPConn, rq proto.RPCRequest, s proto.RPCResponse_Status) {

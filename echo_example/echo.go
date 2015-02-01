@@ -11,21 +11,18 @@ package main
 
 import (
 	"clusterrpc"
-	"errors"
 	"flag"
 	"fmt"
 )
 
-func echoHandler(i []byte) (o []byte, e error) {
-	o = i
-	e = nil
-	fmt.Println("Called echoHandler:", string(i), len(i))
+func echoHandler(cx *clusterrpc.Context) {
+	cx.Success(cx.GetInput())
+	fmt.Println("Called echoHandler:", string(cx.GetInput()), len(cx.GetInput()))
 	return
 }
 
-func errorReturningHandler(i []byte) (o []byte, err error) {
-	err = errors.New("Some error occurred in handler, abort")
-	o = nil
+func errorReturningHandler(cx *clusterrpc.Context) {
+	cx.Fail("Some error occurred in handler, abort")
 	return
 }
 
