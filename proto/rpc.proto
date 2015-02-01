@@ -6,6 +6,7 @@ message RPCRequest {
     required string procedure = 3;
     required string data = 4;
     optional bool connection_close = 5 [default = false];
+    optional uint64 deadline = 6; // UNIX timestamp after which we don't want to have an answer anymore
 }
 
 message RPCResponse {
@@ -24,6 +25,8 @@ message RPCResponse {
         STATUS_NOT_OK = 4;
         // An error happened in the clusterrpc implementation (500)
         STATUS_SERVER_ERROR = 5;
+        // The requested timeout has been expired
+        STATUS_TIMEOUT = 6;
     }
 
     optional string redir_host = 2;

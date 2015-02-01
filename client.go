@@ -78,6 +78,21 @@ func (cl *Client) SetDefault(service, endpoint string) {
 }
 
 /*
+Sets the duration in seconds to wait for R/W operations and to use for calculating
+the deadline of a Request.
+
+RPCRequests will be sent with the current time plus `timeout` as deadline. If the
+server starts processing of the request after the deadline (e.g. because it is loaded and has a rather
+long accept() queue, it will respond with a STATUS_TIMEOUT message. The timeout,
+however, doesn't mean that the server will stop the handler after the deadline.
+It is only used for determining if a response is still wanted.
+
+*/
+func (cl *Client) SetTimeout(timeout time.Duration) {
+	cl.timeout = timeout
+}
+
+/*
 Disable the client. Following calls will result in nil dereference.
 TODO: Maybe do not do the above stated.
 */
@@ -95,10 +110,11 @@ Call a remote procedure service.endpoint with data as input.
 Returns either a byte array and nil as error or a status string as the error string.
 Returned strings are
 
-        "STATUS_OK" // Not returned in reality
-        "STATUS_NOT_FOUND" // Invalid service or endpoint
-        "STATUS_NOT_OK" // Handler returned an error.
-        "STATUS_SERVER_ERROR" // The clusterrpc server experienced an internal server error
+		"STATUS_OK" // Not returned in reality
+		"STATUS_NOT_FOUND" // Invalid service or endpoint
+		"STATUS_NOT_OK" // Handler returned an error.
+		"STATUS_SERVER_ERROR" // The clusterrpc server experienced an internal server error
+		"STATUS_TIMEOUT" // The server was not able to process the request before the set deadline
 
 Returns nil,nil after a timeout
 */
@@ -111,6 +127,10 @@ func (cl *Client) Request(data []byte, service, endpoint string) ([]byte, error)
 	rqproto.Srvc = pb.String(service)
 	rqproto.Procedure = pb.String(endpoint)
 	rqproto.Data = pb.String(string(data))
+
+	if cl.timeout > 0 {
+		rqproto.Deadline = pb.Uint64(uint64(time.Now().Unix()) + uint64(cl.timeout.Seconds()))
+	}
 
 	rq_serialized, pberr := protoToLengthPrefixed(&rqproto)
 
@@ -152,6 +172,11 @@ func (cl *Client) Request(data []byte, service, endpoint string) ([]byte, error)
 		if cl.loglevel >= LOGLEVEL_ERRORS {
 			cl.logger.Println(service+"."+endpoint, rqproto.GetSequenceNumber(), "Couldn't read message:", rerr.Error())
 		}
+
+		if rerr.(net.Error).Timeout() {
+			rerr = RequestError{status: proto.RPCResponse_STATUS_TIMEOUT, message: "Operation timed out"}
+		}
+
 		return nil, rerr
 	}
 	if cl.loglevel >= LOGLEVEL_DEBUG {

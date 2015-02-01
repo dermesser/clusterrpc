@@ -229,6 +229,12 @@ func (srv *Server) handleRequest(conn *net.TCPConn) {
 			return
 		}
 
+		// It is too late... we can discard this request
+		if rqproto.GetDeadline() > uint64(time.Now().Unix()) {
+			srv.sendError(conn, rqproto, proto.RPCResponse_STATUS_TIMEOUT)
+			return
+		}
+
 		// Find matching endpoint
 		srvc, srvc_found := srv.services[rqproto.GetSrvc()]
 
@@ -342,6 +348,7 @@ func (srv *Server) contextToRPCResponse(cx *Context) proto.RPCResponse {
 	return rpproto
 }
 
+// "one-shot" -- doesn't catch Write() errors
 func (srv *Server) sendError(c *net.TCPConn, rq proto.RPCRequest, s proto.RPCResponse_Status) {
 	response := proto.RPCResponse{}
 	response.SequenceNumber = rq.SequenceNumber
@@ -358,6 +365,8 @@ func (srv *Server) sendError(c *net.TCPConn, rq proto.RPCRequest, s proto.RPCRes
 	if srv.timeout > 0 {
 		c.SetDeadline(time.Now().Add(srv.timeout))
 	}
+	// Will fail if we send a STATUS_TIMEOUT message because the client is likely to have closed the
+	// connection by now.
 	c.Write(buf)
 
 	if rq.GetConnectionClose() {
