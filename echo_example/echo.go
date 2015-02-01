@@ -29,11 +29,23 @@ func errorReturningHandler(i []byte) (o []byte, err error) {
 	return
 }
 
+var i int32 = 0
+
+func redirectHandler(cx *clusterrpc.Context) {
+	if i%2 == 0 {
+		cx.Redirect("localhost", 9000)
+	} else {
+		cx.Success([]byte("Hello from redirected!"))
+	}
+	i++
+}
+
 func server() {
 	srv := clusterrpc.NewServer("localhost", 9000)
 	srv.SetLoglevel(clusterrpc.LOGLEVEL_DEBUG)
 	srv.RegisterEndpoint("EchoService", "Echo", echoHandler)
 	srv.RegisterEndpoint("EchoService", "Error", errorReturningHandler)
+	srv.RegisterEndpoint("EchoService", "Redirect", redirectHandler)
 
 	e := srv.AcceptRequests()
 
@@ -51,20 +63,27 @@ func client() {
 	defer cl.Close()
 	cl.SetLoglevel(clusterrpc.LOGLEVEL_DEBUG)
 
+	///
 	resp, err := cl.Request([]byte("helloworld"), "EchoService", "Echo")
 
 	if err != nil {
 		fmt.Println(err.Error())
-		return
 	} else {
 		fmt.Println("Received response:", string(resp), len(resp))
 	}
-
+	///
 	resp, err = cl.Request([]byte("helloworld"), "EchoService", "Error")
 
 	if err != nil {
 		fmt.Println(err.Error())
-		return
+	} else {
+		fmt.Println("Received response:", string(resp), len(resp))
+	}
+	///
+	resp, err = cl.Request([]byte("helloworld"), "EchoService", "Redirect")
+
+	if err != nil {
+		fmt.Println(err.Error())
 	} else {
 		fmt.Println("Received response:", string(resp), len(resp))
 	}

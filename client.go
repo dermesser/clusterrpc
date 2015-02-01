@@ -20,16 +20,17 @@ type Client struct {
 	// Used for default calls
 	default_service, default_endpoint string
 	loglevel                          LOGLEVEL_T
+	accept_redirect                   bool
 }
 
 /*
 Create a new client that connects to the clusterrpc server at raddr:rport.
 The client_name is used for logging purposes.
 */
-func NewClient(client_name, raddr string, rport int) (cl *Client, e error) {
+func NewClient(client_name, raddr string, rport int32) (cl *Client, e error) {
 	addr := net.TCPAddr{}
 	addr.IP = net.ParseIP(raddr)
-	addr.Port = rport
+	addr.Port = int(rport)
 
 	conn, err := net.DialTCP("tcp", nil, &addr)
 
@@ -42,6 +43,7 @@ func NewClient(client_name, raddr string, rport int) (cl *Client, e error) {
 	cl.sequence_number = 0
 	cl.logger = log.New(os.Stderr, "clusterrpc.Client "+client_name+": ", log.Lmicroseconds)
 	cl.loglevel = LOGLEVEL_ERRORS
+	cl.accept_redirect = true
 
 	return
 }
@@ -167,12 +169,18 @@ func (cl *Client) Request(data []byte, service, endpoint string) ([]byte, error)
 		return nil, err
 	}
 
-	if respproto.GetResponseStatus() != proto.RPCResponse_STATUS_OK {
+	if respproto.GetResponseStatus() != proto.RPCResponse_STATUS_OK && respproto.GetResponseStatus() != proto.RPCResponse_STATUS_REDIRECT {
 		if cl.loglevel >= LOGLEVEL_WARNINGS {
 			cl.logger.Println(service+"."+endpoint, rqproto.GetSequenceNumber(), "Received status other than OK")
 		}
 		err = RequestError{status: respproto.GetResponseStatus(), message: respproto.GetErrorMessage()}
 		return nil, err
+	} else if respproto.GetResponseStatus() == proto.RPCResponse_STATUS_REDIRECT {
+		if cl.accept_redirect {
+			return RequestOneShot(respproto.GetRedirHost(), respproto.GetRedirPort(), service, endpoint, data, false)
+		} else {
+			return nil, errors.New("Could not follow redirect (redirect loop avoidance)")
+		}
 	}
 
 	return []byte(respproto.GetResponseData()), nil
@@ -180,4 +188,29 @@ func (cl *Client) Request(data []byte, service, endpoint string) ([]byte, error)
 
 func (cl *Client) RequestDefault(data []byte) (response []byte, e error) {
 	return cl.Request(data, cl.default_service, cl.default_endpoint)
+}
+
+/*
+Do one request and clean up afterwards.
+
+allow_redirect does what it says; it is usually set by a client after following a redirect to
+avoid a redirect loop (A redirects to B, B redirets to A)
+*/
+func RequestOneShot(raddr string, rport int32, service, endpoint string, request_data []byte, allow_redirect bool) ([]byte, error) {
+	cl, err := NewClient("tmp_client", raddr, rport)
+	defer cl.Close()
+
+	if err != nil {
+		return nil, err
+	}
+
+	cl.accept_redirect = allow_redirect
+
+	rsp, err := cl.Request(request_data, service, endpoint)
+
+	if err != nil {
+		return rsp, err
+	}
+
+	return rsp, nil
 }
