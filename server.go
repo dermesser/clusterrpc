@@ -199,6 +199,7 @@ func (srv *Server) AcceptRequests() error {
 // TODO Maybe break this up a little bit?
 func (srv *Server) handleRequest(conn *net.TCPConn) {
 	// Handle requests on one connection until EOF breaks the loop
+	var counter int32 = 0
 	for true {
 		if srv.timeout > 0 {
 			conn.SetDeadline(time.Now().Add(srv.timeout))
@@ -207,14 +208,17 @@ func (srv *Server) handleRequest(conn *net.TCPConn) {
 		request, err := readSizePrefixedMessage(conn)
 
 		if err != nil {
-			if srv.loglevel >= LOGLEVEL_INFO {
-				srv.logger.Println("Network error on reading from accepted connection (non-critical if EOF):", err.Error())
+			if srv.loglevel >= LOGLEVEL_WARNINGS && err.Error() != "EOF" {
+				srv.logger.Println("Network error on reading from accepted connection:", err.Error())
+			} else if srv.loglevel >= LOGLEVEL_INFO {
+				srv.logger.Println("Received EOF from client, closing connection")
 			}
 			conn.Close()
 			return
 		} else {
+			counter++
 			if srv.loglevel >= LOGLEVEL_DEBUG {
-				srv.logger.Println("Received request.")
+				srv.logger.Println("Received request number", counter, "of this connection")
 			}
 		}
 
@@ -231,6 +235,9 @@ func (srv *Server) handleRequest(conn *net.TCPConn) {
 
 		// It is too late... we can discard this request
 		if rqproto.GetDeadline() > uint64(time.Now().Unix()) {
+			if srv.loglevel >= LOGLEVEL_WARNINGS {
+				srv.logger.Println("Timeout occurred, deadline:", rqproto.GetDeadline())
+			}
 			srv.sendError(conn, rqproto, proto.RPCResponse_STATUS_TIMEOUT)
 			return
 		}
@@ -247,7 +254,7 @@ func (srv *Server) handleRequest(conn *net.TCPConn) {
 		} else {
 			if handler, endpoint_found := srvc.endpoints[rqproto.GetProcedure()]; !endpoint_found {
 				if srv.loglevel >= LOGLEVEL_WARNINGS {
-					srv.logger.Println("NOT_FOUND response to request for service.endpoint", rqproto.GetSrvc()+"."+rqproto.GetProcedure())
+					srv.logger.Println("NOT_FOUND response to request for endpoint", rqproto.GetSrvc()+"."+rqproto.GetProcedure())
 				}
 				srv.sendError(conn, rqproto, proto.RPCResponse_STATUS_NOT_FOUND)
 				return
