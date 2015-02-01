@@ -1,0 +1,1 @@
+See `godoc clusterrpc` (or doc.go)

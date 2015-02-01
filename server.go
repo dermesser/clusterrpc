@@ -1,23 +1,3 @@
-/*
-Clusterrpc is a server/client library for doing RPC. It uses protocol buffers for transport,
-the user payload data has however no defined format, but is simply a sequence of bytes (which
-are recommended to be serialized from and to protocol buffers, however).
-
-Clusterrpc works with Services and Endpoints. One Server (i.e. a process with a socket listening on
-a port) can serve several Services ("scopes") with each Service having multiple Endpoints (procedures).
-An endpoint is essentially a registered handler function.
-
-E.g.:
-
-* Service LookupService
-
-** Endpoint Get (LookupService.Get)
-
-** Endpoint Put (LookupService.Put)
-
-** Endpoint Delete (LookupService.Delete)
-
-*/
 package clusterrpc
 
 import (
