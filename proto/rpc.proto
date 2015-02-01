@@ -5,17 +5,24 @@ message RPCRequest {
     required string srvc = 2;
     required string procedure = 3;
     required string data = 4;
+    optional bool connection_close = 5 [default = false];
 }
 
 message RPCResponse {
     required uint64 sequence_number = 1;
 
     enum Status {
+        // Default value
         STATUS_UNKNOWN = 0;
+        // a.k.a. 200
         STATUS_OK = 1;
+        // service/endpoint not found (a.k.a. 404)
         STATUS_NOT_FOUND = 2;
+        // Please retry at redir_host:redir_port (a.k.a. 303/307)
         STATUS_REDIRECT = 3;
+        // The handler returned an error; see the error_message for a description (500). response_data may have content
         STATUS_NOT_OK = 4;
+        // An error happened in the clusterrpc implementation (500)
         STATUS_SERVER_ERROR = 5;
     }
 
@@ -25,5 +32,6 @@ message RPCResponse {
     optional string response_data = 4;
 
     required Status response_status = 5;
+    optional string error_message = 6;
 }
 

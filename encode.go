@@ -9,19 +9,6 @@ import (
 	pb "code.google.com/p/goprotobuf/proto"
 )
 
-/*
-Returns a protobuf struct with the pointers initialized (pointing to allocated
-memory)
-*/
-func NewRequest() proto.RPCRequest {
-	return proto.RPCRequest{SequenceNumber: new(uint64), Srvc: new(string), Procedure: new(string), Data: new(string)}
-
-}
-
-func NewResponse() proto.RPCResponse {
-	return proto.RPCResponse{SequenceNumber: new(uint64), ResponseData: new(string), ResponseStatus: new(proto.RPCResponse_Status)}
-}
-
 // Converts a number to a little-endian byte array, a so-called Sizebuf
 func lengthToSizebuf(l uint64) [8]byte {
 	var sizebuf [8]byte
@@ -60,25 +47,21 @@ func sizebufToLength(b [8]byte) uint64 {
 	return size
 }
 
-func RequestToBytes(r proto.RPCRequest) []byte {
-	return ProtoToLengthPrefixed(&r)
+func requestToBytes(r proto.RPCRequest) ([]byte, error) {
+	return protoToLengthPrefixed(&r)
 }
 
-func ResponseToBytes(r proto.RPCResponse) []byte {
-	return ProtoToLengthPrefixed(&r)
+func responseToBytes(r proto.RPCResponse) ([]byte, error) {
+	return protoToLengthPrefixed(&r)
 }
 
-func ProtoToLengthPrefixed(r pb.Message) []byte {
+func protoToLengthPrefixed(r pb.Message) ([]byte, error) {
 	serialized, err := pb.Marshal(r)
 
-	if err != nil {
-		return nil
-	}
-
-	return BytesToLengthPrefixed(serialized)
+	return bytesToLengthPrefixed(serialized), err
 }
 
-func BytesToLengthPrefixed(b []byte) []byte {
+func bytesToLengthPrefixed(b []byte) []byte {
 	buf := new(bytes.Buffer)
 
 	var sizebuf [8]byte = lengthToSizebuf(uint64(len(b)))
@@ -91,7 +74,7 @@ func BytesToLengthPrefixed(b []byte) []byte {
 // Reads the length of the message from a Reader.
 // If you use a net.Conn, you may use the error as net.Error
 // and look if a timeout has occurred etc.
-func ReadSizePrefixedMessage(r io.Reader) ([]byte, error) {
+func readSizePrefixedMessage(r io.Reader) ([]byte, error) {
 	var sizebuf [8]byte
 
 	_, err := r.Read(sizebuf[:])

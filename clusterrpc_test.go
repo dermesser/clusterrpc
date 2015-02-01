@@ -77,11 +77,11 @@ func BenchmarkToFromSizebuf(b *testing.B) {
 func TestLengthPrefixed(t *testing.T) {
 	b := []byte{3, 23, 11, 45, 32, 11, 23, 45, 88, 99, 64, 34}
 
-	lp := BytesToLengthPrefixed(b)
+	lp := bytesToLengthPrefixed(b)
 
 	r := bytes.NewReader(lp)
 
-	b2, err := ReadSizePrefixedMessage(r)
+	b2, err := readSizePrefixedMessage(r)
 
 	if err != nil || !bytes.Equal(b, b2) {
 		t.Fail()
@@ -102,8 +102,8 @@ func TestRWPrefixed(t *testing.T) {
 	b1 := []byte{3, 23, 11, 45, 32, 11, 23, 45, 88, 99, 64, 34}
 	b2 := []byte{3, 23, 11, 45, 32, 11, 23, 45, 88, 99, 64, 35}
 
-	B1 := BytesToLengthPrefixed(b1)
-	B2 := BytesToLengthPrefixed(b2)
+	B1 := bytesToLengthPrefixed(b1)
+	B2 := bytesToLengthPrefixed(b2)
 
 	_, err1 := f.Write(B1)
 	_, err2 := f.Write(B2)
@@ -113,8 +113,8 @@ func TestRWPrefixed(t *testing.T) {
 	}
 
 	f.Seek(0, 0)
-	rb1, err1 := ReadSizePrefixedMessage(f)
-	rb2, err2 := ReadSizePrefixedMessage(f)
+	rb1, err1 := readSizePrefixedMessage(f)
+	rb2, err2 := readSizePrefixedMessage(f)
 
 	if err1 != nil || err2 != nil || !bytes.Equal(b1, rb1) || !bytes.Equal(b2, rb2) {
 		t.Fail()
