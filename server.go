@@ -214,7 +214,7 @@ func (srv *Server) handleRequest(conn *net.TCPConn) {
 		}
 
 		// It is too late... we can discard this request
-		if rqproto.GetDeadline() > uint64(time.Now().Unix()) {
+		if rqproto.GetDeadline() < uint64(time.Now().Unix()) {
 			if srv.loglevel >= LOGLEVEL_WARNINGS {
 				srv.logger.Println("Timeout occurred, deadline:", rqproto.GetDeadline())
 			}

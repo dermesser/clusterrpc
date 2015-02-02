@@ -13,6 +13,7 @@ import (
 	"clusterrpc"
 	"flag"
 	"fmt"
+	"time"
 )
 
 func echoHandler(cx *clusterrpc.Context) {
@@ -60,7 +61,7 @@ func client() {
 	defer cl.Close()
 	cl.SetLoglevel(clusterrpc.LOGLEVEL_DEBUG)
 
-	///
+	/// Plain echo
 	resp, err := cl.Request([]byte("helloworld"), "EchoService", "Echo")
 
 	if err != nil {
@@ -68,7 +69,7 @@ func client() {
 	} else {
 		fmt.Println("Received response:", string(resp), len(resp))
 	}
-	///
+	/// Return an app error
 	resp, err = cl.Request([]byte("helloworld"), "EchoService", "Error")
 
 	if err != nil {
@@ -76,7 +77,7 @@ func client() {
 	} else {
 		fmt.Println("Received response:", string(resp), len(resp))
 	}
-	///
+	/// Redirect us to somewhere else
 	resp, err = cl.Request([]byte("helloworld"), "EchoService", "Redirect")
 
 	if err != nil {
@@ -84,6 +85,17 @@ func client() {
 	} else {
 		fmt.Println("Received response:", string(resp), len(resp))
 	}
+	/// Async test
+	cb := func(rsp []byte, err error) {
+		if err != nil {
+			fmt.Println("Error:", err.Error())
+			return
+		}
+		fmt.Println(string(rsp))
+	}
+	cl.RequestAsync([]byte("Printed by callback"), "EchoService", "Echo", cb)
+
+	time.Sleep(time.Second * 2) // Wait for callback
 }
 
 func main() {
