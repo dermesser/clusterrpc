@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"sync"
 	"time"
 
 	pb "code.google.com/p/goprotobuf/proto"
@@ -21,6 +22,7 @@ type Client struct {
 	default_service, default_endpoint string
 	loglevel                          LOGLEVEL_T
 	accept_redirect                   bool
+	lock                              sync.Mutex
 }
 
 /*
@@ -52,6 +54,9 @@ func NewClient(client_name, raddr string, rport int32) (cl *Client, e error) {
 Change the writer to which the client logs operations.
 */
 func (cl *Client) SetLoggingOutput(w io.Writer) {
+	cl.lock.Lock()
+	defer cl.lock.Unlock()
+
 	cl.logger = log.New(w, cl.logger.Prefix(), cl.logger.Flags())
 }
 
@@ -59,6 +64,9 @@ func (cl *Client) SetLoggingOutput(w io.Writer) {
 Set the logger of the client to a custom one.
 */
 func (cl *Client) SetLogger(l *log.Logger) {
+	cl.lock.Lock()
+	defer cl.lock.Unlock()
+
 	cl.logger = l
 }
 
@@ -66,6 +74,9 @@ func (cl *Client) SetLogger(l *log.Logger) {
 Define which errors/situations to log
 */
 func (cl *Client) SetLoglevel(ll LOGLEVEL_T) {
+	cl.lock.Lock()
+	defer cl.lock.Unlock()
+
 	cl.loglevel = ll
 }
 
@@ -73,6 +84,9 @@ func (cl *Client) SetLoglevel(ll LOGLEVEL_T) {
 Sets the default service and endpoint; those are used for calls to RequestDefault()
 */
 func (cl *Client) SetDefault(service, endpoint string) {
+	cl.lock.Lock()
+	defer cl.lock.Unlock()
+
 	cl.default_service = service
 	cl.default_endpoint = endpoint
 }
@@ -89,6 +103,9 @@ It is only used for determining if a response is still wanted.
 
 */
 func (cl *Client) SetTimeout(timeout time.Duration) {
+	cl.lock.Lock()
+	defer cl.lock.Unlock()
+
 	cl.timeout = timeout
 }
 
@@ -97,6 +114,9 @@ Disable the client. Following calls will result in nil dereference.
 TODO: Maybe do not do the above stated.
 */
 func (cl *Client) Close() {
+	cl.lock.Lock()
+	defer cl.lock.Unlock()
+
 	if cl.loglevel >= LOGLEVEL_INFO {
 		cl.logger.Println("Closing client channel")
 	}
@@ -119,6 +139,9 @@ Returned strings are
 Returns nil,nil after a timeout
 */
 func (cl *Client) Request(data []byte, service, endpoint string) ([]byte, error) {
+	cl.lock.Lock()
+	defer cl.lock.Unlock()
+
 	rqproto := proto.RPCRequest{}
 
 	rqproto.SequenceNumber = pb.Uint64(cl.sequence_number)
