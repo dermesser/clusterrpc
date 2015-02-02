@@ -16,7 +16,7 @@ func getServer() *Server {
 
 func TestRegisterEndpoint(t *testing.T) {
 	srv := getServer()
-	f := func(b []byte) ([]byte, error) { return []byte(""), nil }
+	f := func(cx *Context) { cx.Success([]byte("")) }
 
 	if nil != srv.RegisterEndpoint("BogusService", "Test1", f) {
 		t.Fail()
@@ -25,7 +25,7 @@ func TestRegisterEndpoint(t *testing.T) {
 
 func TestRegisterEndpointTwice(t *testing.T) {
 	srv := getServer()
-	f := func(b []byte) ([]byte, error) { return []byte(""), nil }
+	f := func(cx *Context) { cx.Success([]byte("")) }
 
 	if nil != srv.RegisterEndpoint("BogusService", "Test1", f) {
 		t.Fail()
