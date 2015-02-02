@@ -154,7 +154,7 @@ func (srv *Server) UnregisterEndpoint(svc, endpoint string) (err error) {
 	return
 }
 
-// Accept loop. Spawns goroutines for requests
+// Accept loop. Spawns goroutines for requests. The returned error is guaranteed to be nil or a net.Error value
 func (srv *Server) AcceptRequests() error {
 
 	for true {
@@ -189,17 +189,17 @@ func (srv *Server) handleRequest(conn *net.TCPConn) {
 
 		if err != nil {
 			if srv.loglevel >= LOGLEVEL_WARNINGS && err.Error() != "EOF" {
-				srv.logger.Println("Network error on reading from accepted connection:", err.Error())
+				srv.logger.Println("Network error on reading from accepted connection:", err.Error(), conn.RemoteAddr().String())
 			} else if srv.loglevel >= LOGLEVEL_INFO {
-				srv.logger.Println("Received EOF from client, closing connection")
+				srv.logger.Println("Received EOF from client, closing connection", conn.RemoteAddr().String())
 			}
 			conn.Close()
 			return
 		} else {
-			counter++
 			if srv.loglevel >= LOGLEVEL_DEBUG {
 				srv.logger.Println("Received request number", counter, "of this connection")
 			}
+			counter++
 		}
 
 		rqproto := proto.RPCRequest{}
