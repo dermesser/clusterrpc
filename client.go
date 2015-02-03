@@ -131,14 +131,14 @@ func (cl *Client) Close() {
 }
 
 /*
-Returns immediately and calls the callback cb once the results are here.
+Returns immediately and calls the callback cb once the results are here. Please note that all
+calls on the same client will block as long as the previous asynchronous call hasn't returned.
+Use multiple clients if you have multiple threads, as this will also allow a better usage of
+the concurrency provided by the server.
 */
 func (cl *Client) RequestAsync(data []byte, service, endpoint string, cb Callback) {
 
-	go func() {
-		cb(cl.Request(data, service, endpoint))
-	}()
-
+	go cb(cl.Request(data, service, endpoint))
 }
 
 /*
