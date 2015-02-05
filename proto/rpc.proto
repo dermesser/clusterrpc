@@ -30,7 +30,7 @@ message RPCResponse {
     }
 
     optional string redir_host = 2;
-    optional int32 redir_port = 3;
+    optional uint32 redir_port = 3;
 
     optional string response_data = 4;
 

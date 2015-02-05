@@ -123,7 +123,7 @@ func (srv *Server) Start() error {
 	return srv.thread(srv.n_threads-1, true)
 }
 
-func (srv *Server) thread(n int, block bool) error {
+func (srv *Server) thread(n int, spawn bool) error {
 	sock, err := srv.zmq_context.NewSocket(zmq4.REP)
 
 	if err != nil {
@@ -140,7 +140,7 @@ func (srv *Server) thread(n int, block bool) error {
 
 	sock.SetSndtimeo(srv.timeout)
 
-	if !block {
+	if !spawn {
 		go srv.acceptRequests(sock)
 	} else {
 		srv.acceptRequests(sock)
@@ -360,7 +360,7 @@ func (srv *Server) contextToRPCResponse(cx *Context) proto.RPCResponse {
 
 	if cx.redirected {
 		rpproto.RedirHost = pb.String(cx.redir_host)
-		rpproto.RedirPort = pb.Int32(cx.redir_port)
+		rpproto.RedirPort = pb.Uint32(cx.redir_port)
 		*rpproto.ResponseStatus = proto.RPCResponse_STATUS_REDIRECT
 	}
 

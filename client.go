@@ -14,8 +14,6 @@ import (
 	zmq4 "github.com/pebbe/zmq4"
 )
 
-type Callback func([]byte, error)
-
 /*
 Synchronous client. This client can only used in a blocking way. It is thread-safe, but
 blocks on any function call (therefore don't use it if you expect contention)
@@ -41,7 +39,7 @@ timeout of 30 seconds (the network operations will time out after this duration
 and return an error).
 
 */
-func NewClient(client_name, raddr string, rport int32) (cl *Client, e error) {
+func NewClient(client_name, raddr string, rport uint32) (cl *Client, e error) {
 
 	cl = new(Client)
 	cl.logger = log.New(os.Stderr, "clusterrpc.Client "+client_name+": ", log.Lmicroseconds)
@@ -254,7 +252,7 @@ Do one request and clean up afterwards. Not really efficient, but ok for rare us
 allow_redirect does what it says; it is usually set by a client after following a redirect to
 avoid a redirect loop (A redirects to B, B redirets to A)
 */
-func RequestOneShot(raddr string, rport int32, service, endpoint string, request_data []byte, allow_redirect bool) ([]byte, error) {
+func RequestOneShot(raddr string, rport uint32, service, endpoint string, request_data []byte, allow_redirect bool) ([]byte, error) {
 	cl, err := NewClient("tmp_client", raddr, rport)
 	defer cl.Close()
 

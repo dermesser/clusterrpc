@@ -13,6 +13,7 @@ import (
 	"clusterrpc"
 	"flag"
 	"fmt"
+	"time"
 )
 
 func echoHandler(cx *clusterrpc.Context) {
@@ -85,18 +86,58 @@ func client() {
 	} else {
 		fmt.Println("Received response:", string(resp), len(resp))
 	}
+}
 
+func aclient() {
+	acl, err := clusterrpc.NewAsyncClient("echo1_acl", "127.0.0.1", 9000, 1)
+	if err != nil {
+		fmt.Println(err.Error())
+		return
+	}
+	defer acl.Close()
+	acl.SetLoglevel(clusterrpc.LOGLEVEL_DEBUG)
+
+	callback := func(rp []byte, e error) {
+		if e == nil {
+			fmt.Println("Received response:", string(rp))
+		} else {
+			fmt.Println("Received error:", e.Error())
+		}
+	}
+
+	/// Plain echo
+	acl.Request([]byte("helloworld"), "EchoService", "Echo", callback)
+
+	/// Return an app error
+	acl.Request([]byte("helloworld"), "EchoService", "Error", callback)
+
+	/// Redirect us to somewhere else
+	acl.Request([]byte("helloworld"), "EchoService", "Redirect", callback)
+
+	time.Sleep(3 * time.Second)
 }
 
 func main() {
 
-	var srv, cl bool
+	var srv, cl, acl bool
 	flag.BoolVar(&srv, "srv", false, "Specify if you want us to run as server")
 	flag.BoolVar(&cl, "cl", false, "Specify if you want us to run as client")
+	flag.BoolVar(&acl, "acl", false, "Specify if you want us to run as asynchronous client")
 
 	flag.Parse()
 
-	if (srv && cl) || (!srv && !cl) {
+	var argcnt int = 0
+	if srv {
+		argcnt++
+	}
+	if cl {
+		argcnt++
+	}
+	if acl {
+		argcnt++
+	}
+
+	if argcnt != 1 {
 		fmt.Println("Wrong combination: Use either -srv or -cl")
 		return
 	}
@@ -106,6 +147,9 @@ func main() {
 	}
 	if cl {
 		client()
+	}
+	if acl {
+		aclient()
 	}
 
 }
