@@ -3,20 +3,26 @@ package clusterrpc
 import (
 	"clusterrpc/proto"
 	"errors"
+	"fmt"
 	"io"
 	"log"
-	"net"
 	"os"
 	"sync"
 	"time"
 
 	pb "code.google.com/p/goprotobuf/proto"
+	zmq4 "github.com/pebbe/zmq4"
 )
 
 type Callback func([]byte, error)
 
+/*
+Synchronous client. This client can only used in a blocking way. It is thread-safe, but
+blocks on any function call (therefore don't use it if you expect contention)
+*/
 type Client struct {
-	channel         *net.TCPConn
+	channel         *zmq4.Socket
+	name            string
 	sequence_number uint64
 	logger          *log.Logger
 	timeout         time.Duration
@@ -35,23 +41,32 @@ and return an error).
 
 */
 func NewClient(client_name, raddr string, rport int32) (cl *Client, e error) {
-	addr := net.TCPAddr{}
-	addr.IP = net.ParseIP(raddr)
-	addr.Port = int(rport)
 
-	conn, err := net.DialTCP("tcp", nil, &addr)
+	cl = new(Client)
+	cl.logger = log.New(os.Stderr, "clusterrpc.Client "+client_name+": ", log.Lmicroseconds)
+
+	var err error
+	cl.channel, err = zmq4.NewSocket(zmq4.REQ)
 
 	if err != nil {
+		cl.logger.Println("Error when creating Req socket:", err.Error())
 		return nil, err
 	}
 
-	cl = new(Client)
-	cl.channel = conn
+	err = cl.channel.Connect(fmt.Sprintf("tcp://%s:%d", raddr, rport))
+
+	if err != nil {
+		cl.logger.Println("Error when connecting Req socket:", err.Error())
+		return nil, err
+	}
+
 	cl.sequence_number = 0
-	cl.logger = log.New(os.Stderr, "clusterrpc.Client "+client_name+": ", log.Lmicroseconds)
 	cl.loglevel = LOGLEVEL_ERRORS
+	cl.name = client_name
 	cl.accept_redirect = true
-	cl.timeout = 30 * time.Second
+
+	cl.channel.SetSndtimeo(30 * time.Second)
+	cl.channel.SetRcvtimeo(30 * time.Second)
 
 	return
 }
@@ -112,7 +127,12 @@ func (cl *Client) SetTimeout(timeout time.Duration) {
 	cl.lock.Lock()
 	defer cl.lock.Unlock()
 
-	cl.timeout = timeout
+	if timeout == 0 {
+		timeout = -1
+		cl.timeout = timeout
+		cl.channel.SetSndtimeo(30 * timeout)
+		cl.channel.SetRcvtimeo(30 * timeout)
+	}
 }
 
 /*
@@ -128,17 +148,6 @@ func (cl *Client) Close() {
 	}
 	cl.channel.Close()
 	cl.channel = nil
-}
-
-/*
-Returns immediately and calls the callback cb once the results are here. Please note that all
-calls on the same client will block as long as the previous asynchronous call hasn't returned.
-Use multiple clients if you have multiple threads, as this will also allow a better usage of
-the concurrency provided by the server.
-*/
-func (cl *Client) RequestAsync(data []byte, service, endpoint string, cb Callback) {
-
-	go cb(cl.Request(data, service, endpoint))
 }
 
 /*
@@ -159,6 +168,8 @@ func (cl *Client) Request(data []byte, service, endpoint string) ([]byte, error)
 	cl.lock.Lock()
 	defer cl.lock.Unlock()
 
+	identity, _ := cl.channel.GetIdentity()
+
 	rqproto := proto.RPCRequest{}
 
 	rqproto.SequenceNumber = pb.Uint64(cl.sequence_number)
@@ -167,76 +178,57 @@ func (cl *Client) Request(data []byte, service, endpoint string) ([]byte, error)
 	rqproto.Srvc = pb.String(service)
 	rqproto.Procedure = pb.String(endpoint)
 	rqproto.Data = pb.String(string(data))
+	rqproto.CallerId = pb.String(cl.name)
 
-	if cl.timeout > 0 {
-		rqproto.Deadline = pb.Uint64(uint64(time.Now().Unix()) + uint64(cl.timeout.Seconds()))
-	}
-
-	rq_serialized, pberr := protoToLengthPrefixed(&rqproto)
+	rq_serialized, pberr := pb.Marshal(&rqproto)
 
 	if pberr != nil {
+		if cl.loglevel >= LOGLEVEL_WARNINGS {
+			cl.logger.Println("PB error!", pberr.Error())
+		}
 		return nil, pberr
 	}
 
-	if cl.timeout > 0 {
-		cl.channel.SetDeadline(time.Now().Add(cl.timeout))
-	}
-	n, werr := cl.channel.Write(rq_serialized)
+	_, err := cl.channel.Send(string(rq_serialized), 0)
 
-	if cl.loglevel >= LOGLEVEL_DEBUG {
-		cl.logger.Println(service+"."+endpoint, rqproto.GetSequenceNumber(), "Sent request")
-	}
-
-	if werr != nil {
+	if err != nil {
 		if cl.loglevel >= LOGLEVEL_ERRORS {
-			cl.logger.Println(service+"."+endpoint, rqproto.GetSequenceNumber(), werr.Error())
+			cl.logger.Printf("[%x/%d] Could not send message to %s. Error: %s\n", identity, rqproto.GetSequenceNumber(), service+"."+endpoint, err.Error())
 		}
-		if werr.(net.Error).Timeout() || werr.(net.Error).Temporary() {
-			return nil, nil
+		return nil, err
+	} else {
+		if cl.loglevel >= LOGLEVEL_DEBUG {
+			cl.logger.Printf("[%x/%d] Sent request to %s\n", identity, rqproto.GetSequenceNumber(), service+"."+endpoint)
 		}
-		return nil, werr
-	} else if n < len(rq_serialized) {
-		if cl.loglevel >= LOGLEVEL_ERRORS {
-			cl.logger.Println(service+"."+endpoint, rqproto.GetSequenceNumber(), "Sent less bytes than provided")
-		}
-		cl.channel.Close()
-		return nil, errors.New("Couldn't send complete messsage")
 	}
 
-	if cl.timeout > 0 {
-		cl.channel.SetDeadline(time.Now().Add(cl.timeout))
-	}
-	respprotobytes, rerr := readSizePrefixedMessage(cl.channel)
+	msg, err := cl.channel.Recv(0)
 
-	if rerr != nil {
+	if err != nil {
 		if cl.loglevel >= LOGLEVEL_ERRORS {
-			cl.logger.Println(service+"."+endpoint, rqproto.GetSequenceNumber(), "Couldn't read message:", rerr.Error())
+			cl.logger.Printf("[%x/%d] Could not receive response from %s, error %s\n", identity, rqproto.GetSequenceNumber(), service+"."+endpoint, err.Error())
 		}
 
-		if rerr.(net.Error).Timeout() {
-			rerr = RequestError{status: proto.RPCResponse_STATUS_TIMEOUT, message: "Operation timed out"}
-		}
-
-		return nil, rerr
+		return nil, err
 	}
 	if cl.loglevel >= LOGLEVEL_DEBUG {
-		cl.logger.Println(service+"."+endpoint, rqproto.GetSequenceNumber(), "Received response")
+		cl.logger.Printf("[%x/%d] Received response from %s\n", identity, rqproto.GetSequenceNumber(), service+"."+endpoint)
 	}
 
 	respproto := proto.RPCResponse{}
 
-	err := pb.Unmarshal(respprotobytes, &respproto)
+	err = pb.Unmarshal([]byte(msg), &respproto)
 
 	if err != nil {
 		if cl.loglevel >= LOGLEVEL_ERRORS {
-			cl.logger.Println(err.Error())
+			cl.logger.Printf("[%x/%d] Error when unmarshaling response: %s\n", identity, rqproto.GetSequenceNumber(), err.Error())
 		}
 		return nil, err
 	}
 
 	if respproto.GetResponseStatus() != proto.RPCResponse_STATUS_OK && respproto.GetResponseStatus() != proto.RPCResponse_STATUS_REDIRECT {
 		if cl.loglevel >= LOGLEVEL_WARNINGS {
-			cl.logger.Println(service+"."+endpoint, rqproto.GetSequenceNumber(), "Received status other than OK")
+			cl.logger.Printf("[%x/%d] Received status other than ok from %s: %s\n", identity, rqproto.GetSequenceNumber(), service+"."+endpoint, StatusToString(respproto.GetResponseStatus()))
 		}
 		err = RequestError{status: respproto.GetResponseStatus(), message: respproto.GetErrorMessage()}
 		return nil, err
@@ -256,7 +248,7 @@ func (cl *Client) RequestDefault(data []byte) (response []byte, e error) {
 }
 
 /*
-Do one request and clean up afterwards.
+Do one request and clean up afterwards. Not really efficient, but ok for rare use.
 
 allow_redirect does what it says; it is usually set by a client after following a redirect to
 avoid a redirect loop (A redirects to B, B redirets to A)

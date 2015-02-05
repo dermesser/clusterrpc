@@ -3,26 +3,32 @@ package clusterrpc
 import (
 	"clusterrpc/proto"
 	"errors"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
-	"net"
 	"os"
 	"time"
 
 	pb "code.google.com/p/goprotobuf/proto"
+	zmq4 "github.com/pebbe/zmq4"
 )
+
+const DEALERPATH string = "inproc://rpc_dealer"
 
 /*
 Handles incoming requests and registering of handler functions.
 */
 type Server struct {
-	sock     *net.TCPListener
-	services map[string]*service
-	logger   *log.Logger
+	zmq_context *zmq4.Context
+	// Router receives new requests, dealer distributes them between the threads
+	router, dealer *zmq4.Socket
+	services       map[string]*service
+	logger         *log.Logger
 	// The timeout only applies on client connections (R/W), not the Listener
-	timeout  time.Duration
-	loglevel LOGLEVEL_T
+	timeout   time.Duration
+	loglevel  LOGLEVEL_T
+	n_threads int
 }
 
 /*
@@ -35,27 +41,111 @@ type service struct {
 }
 
 /*
-Create server listening on the specified laddr:port. There is usually only one server listening
-per process (though it is entirely possible to use multiple ones)
+Create server listening on the specified laddr:port. laddr has to be "*" or an IP address, names
+do not work. There is usually only one server listening per process
+(though it is possible to use multiple servers on different ports, of course)
+
+Use the setter functions described below before calling Start(), otherwise they might
+be ignored.
+
 */
-func NewServer(laddr string, port int) (srv *Server) {
+func NewServer(laddr string, port, n_threads int) (srv *Server) {
+
 	srv = new(Server)
 	srv.services = make(map[string]*service)
 	srv.logger = log.New(os.Stderr, "clusterrpc.Server: ", log.Lmicroseconds)
 	srv.loglevel = LOGLEVEL_WARNINGS
+	srv.n_threads = n_threads
+	srv.timeout = time.Second * 30
 
-	addr := new(net.TCPAddr)
-	addr.IP = net.ParseIP(laddr)
-	addr.Port = port
-
-	var err error
-	srv.sock, err = net.ListenTCP("tcp", addr)
-
-	if err != nil {
-		srv = nil
+	if n_threads <= 0 {
+		srv.logger.Println("Number of threads must be 1 or higher")
+		return nil
 	}
 
+	var err error
+	srv.zmq_context, err = zmq4.NewContext()
+
+	if err != nil {
+		srv.logger.Println("Error when creating context:", err.Error())
+		return nil
+	}
+
+	srv.router, err = srv.zmq_context.NewSocket(zmq4.ROUTER)
+
+	if err != nil {
+		srv.logger.Println("Error when creating Router socket:", err.Error())
+		return nil
+	}
+
+	srv.logger.Println("TCP address", fmt.Sprintf("tcp://%s:%d", laddr, port))
+	err = srv.router.Bind(fmt.Sprintf("tcp://%s:%d", laddr, port))
+
+	if err != nil {
+		srv.logger.Println("Error when binding Router socket:", err.Error())
+		return nil
+	}
+
+	srv.dealer, err = srv.zmq_context.NewSocket(zmq4.DEALER)
+
+	if err != nil {
+		srv.logger.Println("Error when creating Dealer socket:", err.Error())
+		srv = nil
+		return
+	}
+
+	err = srv.dealer.Bind(DEALERPATH)
+
+	if err != nil {
+		srv.logger.Println("Error when binding Dealer socket:", err.Error())
+		srv = nil
+		return
+	}
+
+	go zmq4.Proxy(srv.router, srv.dealer, nil)
+
 	return
+}
+
+/*
+Starts accepting messages. Returns an error if any thread couldn't set up its socket,
+otherwise nil. The error is logged at any LOGLEVEL.
+*/
+func (srv *Server) Start() error {
+
+	for i := 0; i < srv.n_threads-1; i++ {
+		err := srv.thread(i, false)
+
+		if err != nil {
+			return err
+		}
+	}
+	return srv.thread(srv.n_threads-1, true)
+}
+
+func (srv *Server) thread(n int, block bool) error {
+	sock, err := srv.zmq_context.NewSocket(zmq4.REP)
+
+	if err != nil {
+		srv.logger.Println("Thread", n, "could not create socket, exiting!")
+		return err
+	}
+
+	err = sock.Connect(DEALERPATH)
+
+	if err != nil {
+		srv.logger.Println("Thread", n, "could not connect to Dealer, exiting!")
+		return err
+	}
+
+	sock.SetSndtimeo(srv.timeout)
+
+	if !block {
+		go srv.acceptRequests(sock)
+	} else {
+		srv.acceptRequests(sock)
+	}
+	return nil
 }
 
 /*
@@ -82,7 +172,7 @@ func (srv *Server) DisableLogging() {
 /*
 Set the timeout that applies to reads and writes on client sockets.
 */
-func (srv *Server) SetClientRWTimeout(d time.Duration) {
+func (srv *Server) SetClientWTimeout(d time.Duration) {
 	srv.timeout = d
 }
 
@@ -108,14 +198,14 @@ func (srv *Server) RegisterEndpoint(svc, endpoint string, handler Endpoint) (err
 		srv.services[svc].endpoints = make(map[string]Endpoint)
 	} else if _, ok = srv.services[svc].endpoints[endpoint]; ok {
 		if srv.loglevel >= LOGLEVEL_WARNINGS {
-			srv.logger.Println("Trying to register existing endpoint: ", svc+"."+endpoint)
+			srv.logger.Println("Trying to register existing endpoint:", svc+"."+endpoint)
 		}
 		err = errors.New("Endpoint already registered; not overwritten")
 		return
 	}
 
 	if srv.loglevel >= LOGLEVEL_DEBUG {
-		srv.logger.Println("Registered endpoint: ", svc+"."+endpoint)
+		srv.logger.Println("Registered endpoint:", svc+"."+endpoint)
 	}
 	srv.services[svc].endpoints[endpoint] = handler
 	err = nil
@@ -154,159 +244,101 @@ func (srv *Server) UnregisterEndpoint(svc, endpoint string) (err error) {
 	return
 }
 
-// Accept loop. Spawns goroutines for requests. The returned error is guaranteed to be nil or a net.Error value
-func (srv *Server) AcceptRequests() error {
+// This function runs in the (few) threads of the RPC server.
+func (srv *Server) acceptRequests(sock *zmq4.Socket) error {
 
 	for true {
-		conn, err := srv.sock.AcceptTCP()
+		msgs, err := sock.RecvMessage(0)
 
 		if srv.loglevel >= LOGLEVEL_INFO {
-			srv.logger.Println("Accepted connection from", conn.RemoteAddr().String())
+			srv.logger.Printf("Received message\n")
 		}
 		if err == nil {
-			go srv.handleRequest(conn)
-		} else if err.(net.Error).Temporary() || err.(net.Error).Timeout() {
-			continue
+			srv.handleRequest(msgs[0], sock)
 		} else {
-			return err
+			if srv.loglevel >= LOGLEVEL_WARNINGS {
+				srv.logger.Println("Skipped incoming message, error:", err.Error())
+			}
+			continue
 		}
 
 	}
 	return nil
 }
 
-// Examine incoming requests, act upon them until the connection is closed.
+// Handle one request.
+// request[0] is the identity, request[1] is empty, request[2] is the actual data.
 // TODO Maybe break this up a little bit?
-func (srv *Server) handleRequest(conn *net.TCPConn) {
-	// Handle requests on one connection until EOF breaks the loop
-	var counter int32 = 0
-	for true {
-		if srv.timeout > 0 {
-			conn.SetDeadline(time.Now().Add(srv.timeout))
-		}
-		// Read one record
-		request, err := readSizePrefixedMessage(conn)
+func (srv *Server) handleRequest(request string, sock *zmq4.Socket) {
 
-		if err != nil {
-			if srv.loglevel >= LOGLEVEL_WARNINGS && err.Error() != "EOF" {
-				srv.logger.Println("Network error on reading from accepted connection:", err.Error(), conn.RemoteAddr().String())
-			} else if srv.loglevel >= LOGLEVEL_INFO {
-				srv.logger.Println("Received EOF from client, closing connection", conn.RemoteAddr().String())
+	rqproto := proto.RPCRequest{}
+	pberr := pb.Unmarshal([]byte(request), &rqproto)
+
+	if pberr != nil {
+		if srv.loglevel >= LOGLEVEL_ERRORS {
+			srv.logger.Printf("PB unmarshaling error: %s in request from zmq-id %x", pberr.Error(), request[0])
+		}
+		// We can't send an error response because we don't even have a sequence number
+		sock.SendMessage(request, "", "")
+		return
+	}
+
+	caller_id := rqproto.GetCallerId()
+
+	// It is too late... we can discard this request
+	if rqproto.GetDeadline() > 0 && rqproto.GetDeadline() < time.Now().Unix() {
+		if srv.loglevel >= LOGLEVEL_WARNINGS {
+			delta := time.Now().Unix() - rqproto.GetDeadline()
+			srv.logger.Printf("[%s/%d] Timeout occurred, deadline was %d (%d s)", caller_id, rqproto.GetSequenceNumber(), rqproto.GetDeadline(), delta)
+		}
+		srv.sendError(sock, rqproto, proto.RPCResponse_STATUS_TIMEOUT)
+		return
+	}
+
+	// Find matching endpoint
+	srvc, srvc_found := srv.services[rqproto.GetSrvc()]
+
+	if !srvc_found {
+		if srv.loglevel >= LOGLEVEL_WARNINGS {
+			srv.logger.Printf("[%s/%d] NOT_FOUND response to request for service %s\n", caller_id, rqproto.GetSequenceNumber(), rqproto.GetSrvc())
+		}
+		srv.sendError(sock, rqproto, proto.RPCResponse_STATUS_NOT_FOUND)
+		return
+	} else {
+		if handler, endpoint_found := srvc.endpoints[rqproto.GetProcedure()]; !endpoint_found {
+			if srv.loglevel >= LOGLEVEL_WARNINGS {
+				srv.logger.Printf("[%s/%d] NOT_FOUND response to request for endpoint %s\n", caller_id, rqproto.GetSequenceNumber(), rqproto.GetSrvc()+"."+rqproto.GetProcedure())
 			}
-			conn.Close()
+			srv.sendError(sock, rqproto, proto.RPCResponse_STATUS_NOT_FOUND)
 			return
 		} else {
-			if srv.loglevel >= LOGLEVEL_DEBUG {
-				srv.logger.Println("Received request number", counter, "of this connection")
-			}
-			counter++
-		}
+			cx := NewContext([]byte(rqproto.GetData()))
+			handler(cx)
 
-		rqproto := proto.RPCRequest{}
-		pberr := pb.Unmarshal(request, &rqproto)
+			rpproto := srv.contextToRPCResponse(cx)
+			rpproto.SequenceNumber = pb.Uint64(rqproto.GetSequenceNumber())
 
-		if pberr != nil {
-			if srv.loglevel >= LOGLEVEL_ERRORS {
-				srv.logger.Println("PB unmarshaling error:", pberr.Error())
-			}
-			conn.Close()
-			return
-		}
+			response_serialized, pberr := pb.Marshal(&rpproto)
 
-		// It is too late... we can discard this request
-		if rqproto.GetDeadline() < uint64(time.Now().Unix()) {
-			if srv.loglevel >= LOGLEVEL_WARNINGS {
-				srv.logger.Println("Timeout occurred, deadline:", rqproto.GetDeadline())
-			}
-			srv.sendError(conn, rqproto, proto.RPCResponse_STATUS_TIMEOUT)
-			return
-		}
+			if pberr != nil {
+				srv.sendError(sock, rqproto, proto.RPCResponse_STATUS_SERVER_ERROR)
 
-		// Find matching endpoint
-		srvc, srvc_found := srv.services[rqproto.GetSrvc()]
-
-		if !srvc_found {
-			if srv.loglevel >= LOGLEVEL_WARNINGS {
-				srv.logger.Println("NOT_FOUND response to request for service", rqproto.GetSrvc())
-			}
-			srv.sendError(conn, rqproto, proto.RPCResponse_STATUS_NOT_FOUND)
-			return
-		} else {
-			if handler, endpoint_found := srvc.endpoints[rqproto.GetProcedure()]; !endpoint_found {
-				if srv.loglevel >= LOGLEVEL_WARNINGS {
-					srv.logger.Println("NOT_FOUND response to request for endpoint", rqproto.GetSrvc()+"."+rqproto.GetProcedure())
+				if srv.loglevel >= LOGLEVEL_ERRORS {
+					srv.logger.Printf("[%s/%d] Error when serializing RPCResponse: %s\n", caller_id, rqproto.GetSequenceNumber(), pberr.Error())
 				}
-				srv.sendError(conn, rqproto, proto.RPCResponse_STATUS_NOT_FOUND)
-				return
 			} else {
-				cx := NewContext([]byte(rqproto.GetData()))
-				handler(cx)
 
-				rpproto := srv.contextToRPCResponse(cx)
-				rpproto.SequenceNumber = pb.Uint64(rqproto.GetSequenceNumber())
+				_, err := sock.SendMessage(string(response_serialized))
 
-				response_serialized, pberr := protoToLengthPrefixed(&rpproto)
-
-				if pberr != nil {
-					srv.sendError(conn, rqproto, proto.RPCResponse_STATUS_SERVER_ERROR)
-
-					if srv.loglevel >= LOGLEVEL_ERRORS {
-						srv.logger.Println(rqproto.GetSequenceNumber(), "Error when serializing RPCResponse:", pberr.Error())
+				if err != nil {
+					if srv.loglevel >= LOGLEVEL_WARNINGS {
+						srv.logger.Printf("[%s/%d] Error when sending response; %s\n", caller_id, rqproto.GetSequenceNumber(), err.Error())
 					}
+					return
+				}
 
-					if rqproto.GetConnectionClose() {
-						conn.Close()
-					}
-				} else {
-					if srv.timeout > 0 {
-						conn.SetDeadline(time.Now().Add(srv.timeout))
-					}
-					n, werr := conn.Write(response_serialized)
-
-					if werr != nil && (werr.(net.Error).Temporary() || werr.(net.Error).Timeout()) {
-						if srv.loglevel >= LOGLEVEL_WARNINGS {
-							srv.logger.Println(rqproto.GetSequenceNumber(), "Timeout or temporary error, retrying twice")
-						}
-						i := 0
-
-						for i < 2 && (werr.(net.Error).Timeout() || werr.(net.Error).Temporary()) {
-							if srv.timeout > 0 {
-								conn.SetDeadline(time.Now().Add(srv.timeout))
-							}
-							n, werr = conn.Write(response_serialized)
-
-							if n == len(response_serialized) && werr == nil {
-								break
-							}
-
-							i++
-						}
-						if i == 2 {
-							if srv.loglevel >= LOGLEVEL_ERRORS {
-								srv.logger.Println(rqproto.GetSequenceNumber(), "Couldn't send message in three attempts, closing connection")
-							}
-							conn.Close()
-							return
-						}
-					} else if werr != nil {
-						if srv.loglevel >= LOGLEVEL_WARNINGS {
-							srv.logger.Println(rqproto.GetSequenceNumber(), "Error during sending: ", werr.Error())
-						}
-						conn.Close()
-						return
-					} else if n < len(response_serialized) {
-						if srv.loglevel >= LOGLEVEL_WARNINGS {
-							srv.logger.Println(rqproto.GetSequenceNumber(), "Couldn't send whole message:", n, "out of", len(response_serialized))
-						}
-					}
-
-					if rqproto.GetConnectionClose() {
-						conn.Close()
-						return
-					}
-					if srv.loglevel >= LOGLEVEL_DEBUG {
-						srv.logger.Println(rqproto.GetSequenceNumber(), "Sent response to", rqproto.GetSequenceNumber())
-					}
+				if srv.loglevel >= LOGLEVEL_DEBUG {
+					srv.logger.Printf("[%s/%d] Sent response.\n", caller_id, rqproto.GetSequenceNumber())
 				}
 			}
 		}
@@ -336,27 +368,20 @@ func (srv *Server) contextToRPCResponse(cx *Context) proto.RPCResponse {
 }
 
 // "one-shot" -- doesn't catch Write() errors
-func (srv *Server) sendError(c *net.TCPConn, rq proto.RPCRequest, s proto.RPCResponse_Status) {
+func (srv *Server) sendError(sock *zmq4.Socket, rq proto.RPCRequest, s proto.RPCResponse_Status) {
 	response := proto.RPCResponse{}
 	response.SequenceNumber = rq.SequenceNumber
 
 	response.ResponseStatus = new(proto.RPCResponse_Status)
 	*response.ResponseStatus = s
 
-	buf, err := protoToLengthPrefixed(&response)
+	buf, err := pb.Marshal(&response)
 
 	if err != nil {
 		return // Let the client time out. We can't do anything (although this isn't supposed to happen)
 	}
 
-	if srv.timeout > 0 {
-		c.SetDeadline(time.Now().Add(srv.timeout))
-	}
 	// Will fail if we send a STATUS_TIMEOUT message because the client is likely to have closed the
 	// connection by now.
-	c.Write(buf)
-
-	if rq.GetConnectionClose() {
-		c.Close()
-	}
+	sock.SendMessage(buf)
 }

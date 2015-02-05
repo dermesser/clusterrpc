@@ -13,7 +13,6 @@ import (
 	"clusterrpc"
 	"flag"
 	"fmt"
-	"time"
 )
 
 func echoHandler(cx *clusterrpc.Context) {
@@ -39,13 +38,13 @@ func redirectHandler(cx *clusterrpc.Context) {
 }
 
 func server() {
-	srv := clusterrpc.NewServer("localhost", 9000)
+	srv := clusterrpc.NewServer("127.0.0.1", 9000, 2)
 	srv.SetLoglevel(clusterrpc.LOGLEVEL_DEBUG)
 	srv.RegisterEndpoint("EchoService", "Echo", echoHandler)
 	srv.RegisterEndpoint("EchoService", "Error", errorReturningHandler)
 	srv.RegisterEndpoint("EchoService", "Redirect", redirectHandler)
 
-	e := srv.AcceptRequests()
+	e := srv.Start()
 
 	if e != nil {
 		fmt.Println(e.Error())
@@ -53,7 +52,7 @@ func server() {
 }
 
 func client() {
-	cl, err := clusterrpc.NewClient("echo1_cl", "localhost", 9000)
+	cl, err := clusterrpc.NewClient("echo1_cl", "127.0.0.1", 9000)
 	if err != nil {
 		fmt.Println(err.Error())
 		return
@@ -77,6 +76,7 @@ func client() {
 	} else {
 		fmt.Println("Received response:", string(resp), len(resp))
 	}
+
 	/// Redirect us to somewhere else
 	resp, err = cl.Request([]byte("helloworld"), "EchoService", "Redirect")
 
@@ -85,17 +85,7 @@ func client() {
 	} else {
 		fmt.Println("Received response:", string(resp), len(resp))
 	}
-	/// Async test
-	cb := func(rsp []byte, err error) {
-		if err != nil {
-			fmt.Println("Error:", err.Error())
-			return
-		}
-		fmt.Println(string(rsp))
-	}
-	cl.RequestAsync([]byte("Printed by callback"), "EchoService", "Echo", cb)
 
-	time.Sleep(time.Second * 2) // Wait for callback
 }
 
 func main() {
