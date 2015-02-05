@@ -21,14 +21,15 @@ Synchronous client. This client can only used in a blocking way. It is thread-sa
 blocks on any function call (therefore don't use it if you expect contention)
 */
 type Client struct {
-	channel         *zmq4.Socket
+	channel  *zmq4.Socket
+	logger   *log.Logger
+	loglevel LOGLEVEL_T
+
 	name            string
 	sequence_number uint64
-	logger          *log.Logger
 	timeout         time.Duration
 	// Used for default calls
 	default_service, default_endpoint string
-	loglevel                          LOGLEVEL_T
 	accept_redirect                   bool
 	lock                              sync.Mutex
 }
@@ -130,8 +131,8 @@ func (cl *Client) SetTimeout(timeout time.Duration) {
 	if timeout == 0 {
 		timeout = -1
 		cl.timeout = timeout
-		cl.channel.SetSndtimeo(30 * timeout)
-		cl.channel.SetRcvtimeo(30 * timeout)
+		cl.channel.SetSndtimeo(timeout)
+		cl.channel.SetRcvtimeo(timeout)
 	}
 }
 
