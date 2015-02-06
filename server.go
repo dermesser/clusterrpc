@@ -28,7 +28,7 @@ type Server struct {
 	// The timeout only applies on client connections (R/W), not the Listener
 	timeout   time.Duration
 	loglevel  LOGLEVEL_T
-	n_threads int
+	n_threads uint32
 }
 
 /*
@@ -49,7 +49,7 @@ Use the setter functions described below before calling Start(), otherwise they 
 be ignored.
 
 */
-func NewServer(laddr string, port, n_threads int) (srv *Server) {
+func NewServer(laddr string, port, n_threads uint32) (srv *Server) {
 
 	srv = new(Server)
 	srv.services = make(map[string]*service)
@@ -78,7 +78,7 @@ func NewServer(laddr string, port, n_threads int) (srv *Server) {
 		return nil
 	}
 
-	srv.logger.Println("TCP address", fmt.Sprintf("tcp://%s:%d", laddr, port))
+	srv.logger.Println("Bound to TCP address", fmt.Sprintf("tcp://%s:%d", laddr, port))
 	err = srv.router.Bind(fmt.Sprintf("tcp://%s:%d", laddr, port))
 
 	if err != nil {
@@ -113,7 +113,8 @@ otherwise nil. The error is logged at any LOGLEVEL.
 */
 func (srv *Server) Start() error {
 
-	for i := 0; i < srv.n_threads-1; i++ {
+	var i uint32 = 0
+	for ; i < srv.n_threads-1; i++ {
 		err := srv.thread(i, false)
 
 		if err != nil {
@@ -123,7 +124,7 @@ func (srv *Server) Start() error {
 	return srv.thread(srv.n_threads-1, true)
 }
 
-func (srv *Server) thread(n int, spawn bool) error {
+func (srv *Server) thread(n uint32, spawn bool) error {
 	sock, err := srv.zmq_context.NewSocket(zmq4.REP)
 
 	if err != nil {

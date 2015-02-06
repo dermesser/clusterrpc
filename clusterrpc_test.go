@@ -2,9 +2,12 @@ package clusterrpc
 
 import (
 	"bytes"
+	"fmt"
 	"io/ioutil"
 	"os"
+	"runtime"
 	"testing"
+	"time"
 )
 
 func getServer() *Server {

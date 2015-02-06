@@ -23,7 +23,7 @@ type AsyncClient struct {
 	name         string
 	context      *zmq4.Context
 	socket       *zmq4.Socket
-	call_channel chan asyncRequest
+	call_channel chan *asyncRequest
 	qlength      uint32
 
 	sequence_number uint64
@@ -58,7 +58,7 @@ func NewAsyncClient(client_name, raddr string, rport, qlength uint32) (*AsyncCli
 		return nil, err
 	}
 
-	cl.call_channel = make(chan asyncRequest, qlength)
+	cl.call_channel = make(chan *asyncRequest, qlength)
 	go cl.startThread()
 
 	return cl, nil
@@ -95,7 +95,7 @@ func (cl *AsyncClient) SetTimeout(d time.Duration) {
 }
 
 func (cl *AsyncClient) Close() {
-	cl.call_channel <- asyncRequest{terminate: true}
+	cl.call_channel <- &asyncRequest{terminate: true}
 }
 
 func (cl *AsyncClient) startThread() {
@@ -124,6 +124,6 @@ func (cl *AsyncClient) Request(data []byte, service, endpoint string, cb Callbac
 	rq.service = service
 	rq.terminate = false
 
-	cl.call_channel <- rq
+	cl.call_channel <- &rq
 	return
 }

@@ -42,7 +42,7 @@ and return an error).
 func NewClient(client_name, raddr string, rport uint32) (cl *Client, e error) {
 
 	cl = new(Client)
-	cl.logger = log.New(os.Stderr, "clusterrpc.Client "+client_name+": ", log.Lmicroseconds)
+	cl.logger = log.New(os.Stderr, "clusterrpc.Client: ", log.Lmicroseconds)
 
 	var err error
 	cl.channel, err = zmq4.NewSocket(zmq4.REQ)
@@ -167,8 +167,6 @@ func (cl *Client) Request(data []byte, service, endpoint string) ([]byte, error)
 	cl.lock.Lock()
 	defer cl.lock.Unlock()
 
-	identity, _ := cl.channel.GetIdentity()
-
 	rqproto := proto.RPCRequest{}
 
 	rqproto.SequenceNumber = pb.Uint64(cl.sequence_number)
@@ -192,12 +190,12 @@ func (cl *Client) Request(data []byte, service, endpoint string) ([]byte, error)
 
 	if err != nil {
 		if cl.loglevel >= LOGLEVEL_ERRORS {
-			cl.logger.Printf("[%x/%d] Could not send message to %s. Error: %s\n", identity, rqproto.GetSequenceNumber(), service+"."+endpoint, err.Error())
+			cl.logger.Printf("[%s/%d] Could not send message to %s. Error: %s\n", cl.name, rqproto.GetSequenceNumber(), service+"."+endpoint, err.Error())
 		}
 		return nil, err
 	} else {
 		if cl.loglevel >= LOGLEVEL_DEBUG {
-			cl.logger.Printf("[%x/%d] Sent request to %s\n", identity, rqproto.GetSequenceNumber(), service+"."+endpoint)
+			cl.logger.Printf("[%s/%d] Sent request to %s\n", cl.name, rqproto.GetSequenceNumber(), service+"."+endpoint)
 		}
 	}
 
@@ -205,13 +203,13 @@ func (cl *Client) Request(data []byte, service, endpoint string) ([]byte, error)
 
 	if err != nil {
 		if cl.loglevel >= LOGLEVEL_ERRORS {
-			cl.logger.Printf("[%x/%d] Could not receive response from %s, error %s\n", identity, rqproto.GetSequenceNumber(), service+"."+endpoint, err.Error())
+			cl.logger.Printf("[%s/%d] Could not receive response from %s, error %s\n", cl.name, rqproto.GetSequenceNumber(), service+"."+endpoint, err.Error())
 		}
 
 		return nil, err
 	}
 	if cl.loglevel >= LOGLEVEL_DEBUG {
-		cl.logger.Printf("[%x/%d] Received response from %s\n", identity, rqproto.GetSequenceNumber(), service+"."+endpoint)
+		cl.logger.Printf("[%s/%d] Received response from %s\n", cl.name, rqproto.GetSequenceNumber(), service+"."+endpoint)
 	}
 
 	respproto := proto.RPCResponse{}
@@ -220,20 +218,20 @@ func (cl *Client) Request(data []byte, service, endpoint string) ([]byte, error)
 
 	if err != nil {
 		if cl.loglevel >= LOGLEVEL_ERRORS {
-			cl.logger.Printf("[%x/%d] Error when unmarshaling response: %s\n", identity, rqproto.GetSequenceNumber(), err.Error())
+			cl.logger.Printf("[%s/%d] Error when unmarshaling response: %s\n", cl.name, rqproto.GetSequenceNumber(), err.Error())
 		}
 		return nil, err
 	}
 
 	if respproto.GetResponseStatus() != proto.RPCResponse_STATUS_OK && respproto.GetResponseStatus() != proto.RPCResponse_STATUS_REDIRECT {
 		if cl.loglevel >= LOGLEVEL_WARNINGS {
-			cl.logger.Printf("[%x/%d] Received status other than ok from %s: %s\n", identity, rqproto.GetSequenceNumber(), service+"."+endpoint, StatusToString(respproto.GetResponseStatus()))
+			cl.logger.Printf("[%s/%d] Received status other than ok from %s: %s\n", cl.name, rqproto.GetSequenceNumber(), service+"."+endpoint, StatusToString(respproto.GetResponseStatus()))
 		}
 		err = RequestError{status: respproto.GetResponseStatus(), message: respproto.GetErrorMessage()}
 		return nil, err
 	} else if respproto.GetResponseStatus() == proto.RPCResponse_STATUS_REDIRECT {
 		if cl.accept_redirect {
-			return RequestOneShot(respproto.GetRedirHost(), respproto.GetRedirPort(), service, endpoint, data, false)
+			return RequestOneShot(respproto.GetRedirHost(), respproto.GetRedirPort(), service, endpoint, data, false, cl)
 		} else {
 			return nil, errors.New("Could not follow redirect (redirect loop avoidance)")
 		}
@@ -250,9 +248,12 @@ func (cl *Client) RequestDefault(data []byte) (response []byte, e error) {
 Do one request and clean up afterwards. Not really efficient, but ok for rare use.
 
 allow_redirect does what it says; it is usually set by a client after following a redirect to
-avoid a redirect loop (A redirects to B, B redirets to A)
+avoid a redirect loop (A redirects to B, B redirects to A)
+
+The pointer to a client can be nil; otherwise, settings such as timeout, logging output and loglevel
+are copied from it.
 */
-func RequestOneShot(raddr string, rport uint32, service, endpoint string, request_data []byte, allow_redirect bool) ([]byte, error) {
+func RequestOneShot(raddr string, rport uint32, service, endpoint string, request_data []byte, allow_redirect bool, settings_cl *Client) ([]byte, error) {
 	cl, err := NewClient("tmp_client", raddr, rport)
 	defer cl.Close()
 
@@ -261,6 +262,12 @@ func RequestOneShot(raddr string, rport uint32, service, endpoint string, reques
 	}
 
 	cl.accept_redirect = allow_redirect
+
+	if settings_cl != nil {
+		cl.loglevel = settings_cl.loglevel
+		cl.logger = settings_cl.logger
+		cl.SetTimeout(settings_cl.timeout)
+	}
 
 	rsp, err := cl.Request(request_data, service, endpoint)
 
