@@ -119,10 +119,11 @@ func aclient() {
 
 func main() {
 
-	var srv, cl, acl bool
+	var srv, cl, acl, both bool
 	flag.BoolVar(&srv, "srv", false, "Specify if you want us to run as server")
 	flag.BoolVar(&cl, "cl", false, "Specify if you want us to run as client")
 	flag.BoolVar(&acl, "acl", false, "Specify if you want us to run as asynchronous client")
+	flag.BoolVar(&both, "both", false, "Specify if you want us to run server and client in one process")
 
 	flag.Parse()
 
@@ -136,20 +137,29 @@ func main() {
 	if acl {
 		argcnt++
 	}
+	if both {
+		argcnt++
+	}
 
 	if argcnt != 1 {
-		fmt.Println("Wrong combination: Use either -srv or -cl")
+		fmt.Println("Wrong combination: Use either -srv, -acl or -cl")
 		return
 	}
 
 	if srv {
 		server()
-	}
-	if cl {
+	} else if cl {
 		client()
-	}
-	if acl {
+	} else if acl {
 		aclient()
+	} else if both {
+
+		go server()
+
+		time.Sleep(2 * time.Second)
+
+		client()
+
 	}
 
 }

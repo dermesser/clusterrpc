@@ -100,7 +100,7 @@ func (cl *AsyncClient) startThread() {
 		}
 
 		if cl.loglevel >= LOGLEVEL_WARNINGS && float64(len(cl.call_channel)) > 0.7*float64(cl.qlength) {
-			cl.logger.Println("AsyncClient", cl.name, "Warning: Queue is fuller than 70% of its capacity!")
+			cl.logger.Println("AsyncClient", cl.client.name, "Warning: Queue is fuller than 70% of its capacity!")
 		}
 
 		rsp, err := cl.client.Request(rq.data, rq.service, rq.endpoint)
