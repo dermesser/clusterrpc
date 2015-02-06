@@ -5,8 +5,6 @@ import (
 	"log"
 	"os"
 	"time"
-
-	zmq4 "github.com/pebbe/zmq4"
 )
 
 type Callback func([]byte, error)
@@ -20,13 +18,8 @@ type asyncRequest struct {
 }
 
 type AsyncClient struct {
-	name         string
-	context      *zmq4.Context
-	socket       *zmq4.Socket
 	call_channel chan *asyncRequest
 	qlength      uint32
-
-	sequence_number uint64
 
 	logger   *log.Logger
 	loglevel LOGLEVEL_T
@@ -91,7 +84,7 @@ func (cl *AsyncClient) SetLoglevel(ll LOGLEVEL_T) {
 Set timeout for writes.
 */
 func (cl *AsyncClient) SetTimeout(d time.Duration) {
-	cl.socket.SetSndtimeo(d)
+	cl.client.SetTimeout(d)
 }
 
 func (cl *AsyncClient) Close() {
@@ -101,7 +94,7 @@ func (cl *AsyncClient) Close() {
 func (cl *AsyncClient) startThread() {
 	for rq := range cl.call_channel {
 		if rq.terminate {
-			cl.socket.Close()
+			cl.client.Close()
 			close(cl.call_channel)
 			return
 		}

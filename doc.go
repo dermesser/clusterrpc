@@ -1,5 +1,5 @@
 /*
-Clusterrpc is a server/client library for doing RPC. It uses protocol buffers for transport,
+Clusterrpc is a server/client library for doing RPC. It uses protocol buffers over ZeroMQ for transport,
 the user payload data has however no defined format, but is simply a sequence of bytes (it is however
 recommended to use protocol buffers or a similar technique to encode structured data)
 
@@ -14,5 +14,10 @@ E.g.:
 		+ Endpoint LockService.Acquire
 		+ Endpoint LockService.Release
 		+ Endpoint LockService.IsLocked
+
+You probably need to install libzeromq >= 4 before being able to build clusterrpc.
+
+For the architecture, especially the ZeroMQ patterns used, refer to
+https://docs.google.com/drawings/d/1rERuS_D-5gAr8ImQ4kTPrDeZoEmOHNnG-WCSiLI5kUw/edit?usp=sharing
 */
 package clusterrpc

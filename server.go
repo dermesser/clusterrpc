@@ -109,7 +109,7 @@ func NewServer(laddr string, port, n_threads uint32) (srv *Server) {
 
 /*
 Starts accepting messages. Returns an error if any thread couldn't set up its socket,
-otherwise nil. The error is logged at any LOGLEVEL.
+otherwise nil.
 */
 func (srv *Server) Start() error {
 
@@ -122,31 +122,6 @@ func (srv *Server) Start() error {
 		}
 	}
 	return srv.thread(srv.n_threads-1, true)
-}
-
-func (srv *Server) thread(n uint32, spawn bool) error {
-	sock, err := srv.zmq_context.NewSocket(zmq4.REP)
-
-	if err != nil {
-		srv.logger.Println("Thread", n, "could not create socket, exiting!")
-		return err
-	}
-
-	err = sock.Connect(DEALERPATH)
-
-	if err != nil {
-		srv.logger.Println("Thread", n, "could not connect to Dealer, exiting!")
-		return err
-	}
-
-	sock.SetSndtimeo(srv.timeout)
-
-	if !spawn {
-		go srv.acceptRequests(sock)
-	} else {
-		srv.acceptRequests(sock)
-	}
-	return nil
 }
 
 /*
@@ -243,6 +218,35 @@ func (srv *Server) UnregisterEndpoint(svc, endpoint string) (err error) {
 	}
 
 	return
+}
+
+func (srv *Server) thread(n uint32, spawn bool) error {
+	sock, err := srv.zmq_context.NewSocket(zmq4.REP)
+
+	if err != nil {
+		if srv.loglevel >= LOGLEVEL_ERRORS {
+			srv.logger.Println("Thread", n, "could not create socket, exiting!")
+		}
+		return err
+	}
+
+	err = sock.Connect(DEALERPATH)
+
+	if err != nil {
+		if srv.loglevel >= LOGLEVEL_ERRORS {
+			srv.logger.Println("Thread", n, "could not connect to Dealer, exiting!")
+		}
+		return err
+	}
+
+	sock.SetSndtimeo(srv.timeout)
+
+	if !spawn {
+		go srv.acceptRequests(sock)
+	} else {
+		srv.acceptRequests(sock)
+	}
+	return nil
 }
 
 // This function runs in the (few) threads of the RPC server.
