@@ -1,5 +1,9 @@
 package clusterrpc
 
+/*
+This file is not used anymore since the introduction of ZeroMQ.
+*/
+
 import (
 	"bytes"
 	proto "clusterrpc/proto"

@@ -5,7 +5,7 @@ type Context struct {
 	failed, redirected bool
 	errorMessage       string
 	redir_host         string
-	redir_port         int32
+	redir_port         uint32
 }
 
 func NewContext(input []byte) *Context {
@@ -24,7 +24,7 @@ func (c *Context) Fail(msg string) {
 	c.errorMessage = msg
 }
 
-func (c *Context) Redirect(host string, port int32) {
+func (c *Context) Redirect(host string, port uint32) {
 	c.redir_host = host
 	c.redir_port = port
 	c.redirected = true

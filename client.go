@@ -1,30 +1,34 @@
 package clusterrpc
 
 import (
-	"clusterrpc/proto"
-	"errors"
 	"io"
 	"log"
-	"net"
 	"os"
 	"sync"
 	"time"
 
-	pb "code.google.com/p/goprotobuf/proto"
+	zmq "github.com/pebbe/zmq4"
 )
 
-type Callback func([]byte, error)
-
+/*
+Synchronous client. This client can only used in a blocking way. It is thread-safe, but
+blocks on any function call (therefore don't use it if you expect contention)
+*/
 type Client struct {
-	channel         *net.TCPConn
+	channel  *zmq.Socket
+	logger   *log.Logger
+	loglevel LOGLEVEL_T
+
+	name            string
+	raddr           string
+	rport           uint32
 	sequence_number uint64
-	logger          *log.Logger
 	timeout         time.Duration
 	// Used for default calls
 	default_service, default_endpoint string
-	loglevel                          LOGLEVEL_T
 	accept_redirect                   bool
 	lock                              sync.Mutex
+	eagain_retries                    int
 }
 
 /*
@@ -34,24 +38,23 @@ timeout of 30 seconds (the network operations will time out after this duration
 and return an error).
 
 */
-func NewClient(client_name, raddr string, rport int32) (cl *Client, e error) {
-	addr := net.TCPAddr{}
-	addr.IP = net.ParseIP(raddr)
-	addr.Port = int(rport)
-
-	conn, err := net.DialTCP("tcp", nil, &addr)
-
-	if err != nil {
-		return nil, err
-	}
+func NewClient(client_name, raddr string, rport uint32) (cl *Client, e error) {
 
 	cl = new(Client)
-	cl.channel = conn
+	cl.logger = log.New(os.Stderr, "clusterrpc.Client: ", log.Lmicroseconds)
+
 	cl.sequence_number = 0
-	cl.logger = log.New(os.Stderr, "clusterrpc.Client "+client_name+": ", log.Lmicroseconds)
 	cl.loglevel = LOGLEVEL_ERRORS
+	cl.name = client_name
+	cl.raddr = raddr
+	cl.rport = rport
 	cl.accept_redirect = true
-	cl.timeout = 30 * time.Second
+	cl.eagain_retries = 3
+
+	cl.createChannel()
+
+	cl.channel.SetSndtimeo(10 * time.Second)
+	cl.channel.SetRcvtimeo(10 * time.Second)
 
 	return
 }
@@ -112,7 +115,12 @@ func (cl *Client) SetTimeout(timeout time.Duration) {
 	cl.lock.Lock()
 	defer cl.lock.Unlock()
 
-	cl.timeout = timeout
+	if timeout == 0 {
+		timeout = -1
+		cl.timeout = timeout
+		cl.channel.SetSndtimeo(timeout)
+		cl.channel.SetRcvtimeo(timeout)
+	}
 }
 
 /*
@@ -131,17 +139,6 @@ func (cl *Client) Close() {
 }
 
 /*
-Returns immediately and calls the callback cb once the results are here. Please note that all
-calls on the same client will block as long as the previous asynchronous call hasn't returned.
-Use multiple clients if you have multiple threads, as this will also allow a better usage of
-the concurrency provided by the server.
-*/
-func (cl *Client) RequestAsync(data []byte, service, endpoint string, cb Callback) {
-
-	go cb(cl.Request(data, service, endpoint))
-}
-
-/*
 Call a remote procedure service.endpoint with data as input.
 
 Returns either a byte array and nil as error or a status string as the error string.
@@ -156,99 +153,7 @@ Returned strings are
 Returns nil,nil after a timeout
 */
 func (cl *Client) Request(data []byte, service, endpoint string) ([]byte, error) {
-	cl.lock.Lock()
-	defer cl.lock.Unlock()
-
-	rqproto := proto.RPCRequest{}
-
-	rqproto.SequenceNumber = pb.Uint64(cl.sequence_number)
-	cl.sequence_number++
-
-	rqproto.Srvc = pb.String(service)
-	rqproto.Procedure = pb.String(endpoint)
-	rqproto.Data = pb.String(string(data))
-
-	if cl.timeout > 0 {
-		rqproto.Deadline = pb.Uint64(uint64(time.Now().Unix()) + uint64(cl.timeout.Seconds()))
-	}
-
-	rq_serialized, pberr := protoToLengthPrefixed(&rqproto)
-
-	if pberr != nil {
-		return nil, pberr
-	}
-
-	if cl.timeout > 0 {
-		cl.channel.SetDeadline(time.Now().Add(cl.timeout))
-	}
-	n, werr := cl.channel.Write(rq_serialized)
-
-	if cl.loglevel >= LOGLEVEL_DEBUG {
-		cl.logger.Println(service+"."+endpoint, rqproto.GetSequenceNumber(), "Sent request")
-	}
-
-	if werr != nil {
-		if cl.loglevel >= LOGLEVEL_ERRORS {
-			cl.logger.Println(service+"."+endpoint, rqproto.GetSequenceNumber(), werr.Error())
-		}
-		if werr.(net.Error).Timeout() || werr.(net.Error).Temporary() {
-			return nil, nil
-		}
-		return nil, werr
-	} else if n < len(rq_serialized) {
-		if cl.loglevel >= LOGLEVEL_ERRORS {
-			cl.logger.Println(service+"."+endpoint, rqproto.GetSequenceNumber(), "Sent less bytes than provided")
-		}
-		cl.channel.Close()
-		return nil, errors.New("Couldn't send complete messsage")
-	}
-
-	if cl.timeout > 0 {
-		cl.channel.SetDeadline(time.Now().Add(cl.timeout))
-	}
-	respprotobytes, rerr := readSizePrefixedMessage(cl.channel)
-
-	if rerr != nil {
-		if cl.loglevel >= LOGLEVEL_ERRORS {
-			cl.logger.Println(service+"."+endpoint, rqproto.GetSequenceNumber(), "Couldn't read message:", rerr.Error())
-		}
-
-		if rerr.(net.Error).Timeout() {
-			rerr = RequestError{status: proto.RPCResponse_STATUS_TIMEOUT, message: "Operation timed out"}
-		}
-
-		return nil, rerr
-	}
-	if cl.loglevel >= LOGLEVEL_DEBUG {
-		cl.logger.Println(service+"."+endpoint, rqproto.GetSequenceNumber(), "Received response")
-	}
-
-	respproto := proto.RPCResponse{}
-
-	err := pb.Unmarshal(respprotobytes, &respproto)
-
-	if err != nil {
-		if cl.loglevel >= LOGLEVEL_ERRORS {
-			cl.logger.Println(err.Error())
-		}
-		return nil, err
-	}
-
-	if respproto.GetResponseStatus() != proto.RPCResponse_STATUS_OK && respproto.GetResponseStatus() != proto.RPCResponse_STATUS_REDIRECT {
-		if cl.loglevel >= LOGLEVEL_WARNINGS {
-			cl.logger.Println(service+"."+endpoint, rqproto.GetSequenceNumber(), "Received status other than OK")
-		}
-		err = RequestError{status: respproto.GetResponseStatus(), message: respproto.GetErrorMessage()}
-		return nil, err
-	} else if respproto.GetResponseStatus() == proto.RPCResponse_STATUS_REDIRECT {
-		if cl.accept_redirect {
-			return RequestOneShot(respproto.GetRedirHost(), respproto.GetRedirPort(), service, endpoint, data, false)
-		} else {
-			return nil, errors.New("Could not follow redirect (redirect loop avoidance)")
-		}
-	}
-
-	return []byte(respproto.GetResponseData()), nil
+	return cl.requestInternal(data, service, endpoint, cl.eagain_retries)
 }
 
 func (cl *Client) RequestDefault(data []byte) (response []byte, e error) {
@@ -256,26 +161,14 @@ func (cl *Client) RequestDefault(data []byte) (response []byte, e error) {
 }
 
 /*
-Do one request and clean up afterwards.
+Do one request and clean up afterwards. Not really efficient, but ok for rare use.
 
 allow_redirect does what it says; it is usually set by a client after following a redirect to
-avoid a redirect loop (A redirects to B, B redirets to A)
+avoid a redirect loop (A redirects to B, B redirects to A)
+
+The pointer to a client can be nil; otherwise, settings such as timeout, logging output and loglevel
+are copied from it.
 */
-func RequestOneShot(raddr string, rport int32, service, endpoint string, request_data []byte, allow_redirect bool) ([]byte, error) {
-	cl, err := NewClient("tmp_client", raddr, rport)
-	defer cl.Close()
-
-	if err != nil {
-		return nil, err
-	}
-
-	cl.accept_redirect = allow_redirect
-
-	rsp, err := cl.Request(request_data, service, endpoint)
-
-	if err != nil {
-		return rsp, err
-	}
-
-	return rsp, nil
+func RequestOneShot(raddr string, rport uint32, service, endpoint string, request_data []byte) ([]byte, error) {
+	return requestOneShot(raddr, rport, service, endpoint, request_data, true, nil)
 }

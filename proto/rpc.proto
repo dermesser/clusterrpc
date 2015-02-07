@@ -5,8 +5,8 @@ message RPCRequest {
     required string srvc = 2;
     required string procedure = 3;
     required string data = 4;
-    optional bool connection_close = 5 [default = false];
-    optional uint64 deadline = 6; // UNIX timestamp after which we don't want to have an answer anymore
+    optional int64 deadline = 5; // UNIX timestamp after which we don't want to have an answer anymore
+    optional string caller_id = 6;
 }
 
 message RPCResponse {
@@ -30,7 +30,7 @@ message RPCResponse {
     }
 
     optional string redir_host = 2;
-    optional int32 redir_port = 3;
+    optional uint32 redir_port = 3;
 
     optional string response_data = 4;
 
