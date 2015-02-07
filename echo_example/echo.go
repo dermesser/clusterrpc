@@ -92,6 +92,16 @@ func client() {
 	} else {
 		fmt.Println("Received response:", string(resp), len(resp))
 	}
+
+	// NOT_FOUND
+
+	resp, err = cl.Request([]byte("helloworld"), "EchoService", "DoesNotExist")
+
+	if err != nil {
+		fmt.Println(err.Error())
+	} else {
+		fmt.Println("Received response:", string(resp), len(resp))
+	}
 }
 
 func aclient() {

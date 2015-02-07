@@ -37,7 +37,7 @@ func (srv *Server) loadbalance() {
 			for _, sock := range polled {
 				switch s := sock.Socket; s {
 				case srv.frontend_router:
-					msgs, err := srv.frontend_router.RecvMessage(0)
+					msgs, err := srv.frontend_router.RecvMessageBytes(0) // [client identity, "", RPCRequest]
 
 					if err != nil {
 						if srv.loglevel >= LOGLEVEL_ERRORS {
@@ -45,9 +45,15 @@ func (srv *Server) loadbalance() {
 							continue
 						}
 					}
+					if len(msgs) < 3 {
+						if srv.loglevel >= LOGLEVEL_ERRORS {
+							srv.logger.Println("Error: Skipping message with less than 3 frames from frontend router;", len(msgs), "frames received")
+						}
+						continue
+					}
 
 					node := <-queue
-					_, err = srv.backend_router.SendMessage(node, "", msgs)
+					_, err = srv.backend_router.SendMessage(node, "", msgs) // [worker identity, "", [client identity, "", RPCRequest]]
 
 					if err != nil {
 						if srv.loglevel >= LOGLEVEL_ERRORS {
@@ -57,7 +63,7 @@ func (srv *Server) loadbalance() {
 					}
 
 				case srv.backend_router:
-					msgs, err := srv.backend_router.RecvMessage(0)
+					msgs, err := srv.backend_router.RecvMessageBytes(0) // [client identity, "", RPCResponse]
 
 					if err != nil {
 						if srv.loglevel >= LOGLEVEL_ERRORS {
@@ -65,11 +71,17 @@ func (srv *Server) loadbalance() {
 							continue
 						}
 					}
+					if len(msgs) < 3 {
+						if srv.loglevel >= LOGLEVEL_ERRORS {
+							srv.logger.Println("Error: Skipping message with less than 3 frames from backend;", len(msgs), "frames received")
+						}
+						continue
+					}
 
 					backend_identity := msgs[0]
-					queue <- backend_identity
+					queue <- string(backend_identity)
 
-					if msgs[2] != MAGIC_READY_STRING {
+					if string(msgs[2]) != MAGIC_READY_STRING { // if not MAGIC_READY_STRING, it's a RPCResponse protobuf.
 						_, err = srv.frontend_router.SendMessage(msgs[2:])
 						if err != nil {
 							if srv.loglevel >= LOGLEVEL_ERRORS {
@@ -176,7 +188,7 @@ func (srv *Server) handleRequest(data, client_identity []byte, sock *zmq.Socket)
 			delta := time.Now().Unix() - rqproto.GetDeadline()
 			srv.logger.Printf("[%x/%s/%d] Timeout occurred, deadline was %d (%d s)", client_identity, caller_id, rqproto.GetSequenceNumber(), rqproto.GetDeadline(), delta)
 		}
-		srv.sendError(sock, rqproto, proto.RPCResponse_STATUS_TIMEOUT)
+		// Fail silently
 		return
 	}
 
@@ -187,14 +199,14 @@ func (srv *Server) handleRequest(data, client_identity []byte, sock *zmq.Socket)
 		if srv.loglevel >= LOGLEVEL_WARNINGS {
 			srv.logger.Printf("[%x/%s/%d] NOT_FOUND response to request for service %s\n", client_identity, caller_id, rqproto.GetSequenceNumber(), rqproto.GetSrvc())
 		}
-		srv.sendError(sock, rqproto, proto.RPCResponse_STATUS_NOT_FOUND)
+		srv.sendError(sock, rqproto, proto.RPCResponse_STATUS_NOT_FOUND, client_identity)
 		return
 	} else {
 		if handler, endpoint_found := srvc.endpoints[rqproto.GetProcedure()]; !endpoint_found {
 			if srv.loglevel >= LOGLEVEL_WARNINGS {
 				srv.logger.Printf("[%x/%s/%d] NOT_FOUND response to request for endpoint %s\n", client_identity, caller_id, rqproto.GetSequenceNumber(), rqproto.GetSrvc()+"."+rqproto.GetProcedure())
 			}
-			srv.sendError(sock, rqproto, proto.RPCResponse_STATUS_NOT_FOUND)
+			srv.sendError(sock, rqproto, proto.RPCResponse_STATUS_NOT_FOUND, client_identity)
 			return
 		} else {
 			cx := NewContext([]byte(rqproto.GetData()))
@@ -206,7 +218,7 @@ func (srv *Server) handleRequest(data, client_identity []byte, sock *zmq.Socket)
 			response_serialized, pberr := pb.Marshal(&rpproto)
 
 			if pberr != nil {
-				srv.sendError(sock, rqproto, proto.RPCResponse_STATUS_SERVER_ERROR)
+				srv.sendError(sock, rqproto, proto.RPCResponse_STATUS_SERVER_ERROR, client_identity)
 
 				if srv.loglevel >= LOGLEVEL_ERRORS {
 					srv.logger.Printf("[%x/%s/%d] Error when serializing RPCResponse: %s\n", client_identity, caller_id, rqproto.GetSequenceNumber(), pberr.Error())
@@ -252,8 +264,8 @@ func (srv *Server) contextToRPCResponse(cx *Context) proto.RPCResponse {
 	return rpproto
 }
 
-// "one-shot" -- doesn't catch Write() errors
-func (srv *Server) sendError(sock *zmq.Socket, rq proto.RPCRequest, s proto.RPCResponse_Status) {
+// "one-shot" -- doesn't catch Write() errors. But needs a lot of context
+func (srv *Server) sendError(sock *zmq.Socket, rq proto.RPCRequest, s proto.RPCResponse_Status, client_id []byte) {
 	response := proto.RPCResponse{}
 	response.SequenceNumber = rq.SequenceNumber
 
@@ -266,7 +278,5 @@ func (srv *Server) sendError(sock *zmq.Socket, rq proto.RPCRequest, s proto.RPCR
 		return // Let the client time out. We can't do anything (although this isn't supposed to happen)
 	}
 
-	// Will fail if we send a STATUS_TIMEOUT message because the client is likely to have closed the
-	// connection by now.
-	sock.SendMessage(buf)
+	sock.SendMessage(client_id, "", buf)
 }
