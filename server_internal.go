@@ -9,6 +9,9 @@ import (
 	zmq "github.com/pebbe/zmq4"
 )
 
+const BACKEND_ROUTER_PATH string = "inproc://rpc_backend_router"
+const MAGIC_READY_STRING string = "___//READY\\___"
+
 /*
 This file has the internal functions, the actual server; server.go remains
 uncluttered and with only public functions.
@@ -20,6 +23,9 @@ A backend is queued when it sends a response, and dequeued when we have a client
 */
 func (srv *Server) loadbalance() {
 	queue := make(chan string, srv.n_threads)
+	// todo_queue is for incoming requests that find no available worker immediately.
+	// We're allowing a backlog of 50 outstanding requests per task; over that, we're dropping
+	todo_queue := make(chan [][]byte, srv.n_threads*50)
 
 	poller := zmq.NewPoller()
 	poller.Add(srv.frontend_router, zmq.POLLIN)
@@ -52,14 +58,31 @@ func (srv *Server) loadbalance() {
 						continue
 					}
 
-					node := <-queue
-					_, err = srv.backend_router.SendMessage(node, "", msgs) // [worker identity, "", [client identity, "", RPCRequest]]
-
-					if err != nil {
-						if srv.loglevel >= LOGLEVEL_ERRORS {
-							srv.logger.Println("Error when sending to backend router:", err.Error())
+					// Try to find worker to send this request to
+					select {
+					// Skipped if none available
+					case node := <-queue:
+						_, err = srv.backend_router.SendMessage(node, "", msgs) // [worker identity, "", [client identity, "", RPCRequest]]
+						if err != nil {
+							if srv.loglevel >= LOGLEVEL_ERRORS {
+								srv.logger.Println("Error when sending to backend router:", err.Error())
+							}
 						}
+						continue // We're done here
+					default:
+					}
+
+					// We haven't found a worker, try to queue the message
+					select {
+					case todo_queue <- msgs:
 						continue
+					default:
+
+					}
+
+					// Could not queue, drop.
+					if srv.loglevel >= LOGLEVEL_WARNINGS {
+						srv.logger.Println("Dropped message; no available workers, queue full")
 					}
 
 				case srv.backend_router:
@@ -81,15 +104,28 @@ func (srv *Server) loadbalance() {
 					backend_identity := msgs[0]
 					queue <- string(backend_identity)
 
+					// third frame is MAGIC_READY_STRING when a new worker joins.
+					// Otherwise, send response to client.
 					if string(msgs[2]) != MAGIC_READY_STRING { // if not MAGIC_READY_STRING, it's a RPCResponse protobuf.
-						_, err = srv.frontend_router.SendMessage(msgs[2:])
+						_, err := srv.frontend_router.SendMessage(msgs[2:])
+
 						if err != nil {
 							if srv.loglevel >= LOGLEVEL_ERRORS {
 								srv.logger.Println("Error when sending to backend router:", err.Error())
 							}
 						}
-					} else {
-						continue
+					}
+
+					// Now that we have a new free worker, let's see if there's work in the queue...
+					if len(todo_queue) > 0 && len(queue) > 0 {
+						queued_messages := <-todo_queue
+						worker_id := <-queue
+						_, err = srv.backend_router.SendMessage(worker_id, "", queued_messages) // [worker identity, "", [client identity, "", RPCRequest]]
+						if err != nil {
+							if srv.loglevel >= LOGLEVEL_ERRORS {
+								srv.logger.Println("Error when sending to backend router:", err.Error())
+							}
+						}
 					}
 				}
 			}
@@ -110,7 +146,8 @@ func (srv *Server) thread(n int, spawn bool) error {
 		return err
 	}
 
-	err = sock.SetIdentity(fmt.Sprintf("%d", n))
+	worker_identity := fmt.Sprintf("%d", n)
+	err = sock.SetIdentity(worker_identity)
 
 	if err != nil {
 		if srv.loglevel >= LOGLEVEL_ERRORS {

@@ -29,6 +29,10 @@ func (cl *Client) createChannel() error {
 		cl.logger.Println("Error when connecting Req socket:", err.Error())
 		return err
 	}
+
+	cl.channel.SetSndtimeo(cl.timeout)
+	cl.channel.SetRcvtimeo(cl.timeout)
+
 	return nil
 }
 

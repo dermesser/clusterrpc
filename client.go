@@ -50,11 +50,9 @@ func NewClient(client_name, raddr string, rport uint32) (cl *Client, e error) {
 	cl.rport = rport
 	cl.accept_redirect = true
 	cl.eagain_retries = 3
+	cl.timeout = 10 * time.Second
 
 	cl.createChannel()
-
-	cl.channel.SetSndtimeo(10 * time.Second)
-	cl.channel.SetRcvtimeo(10 * time.Second)
 
 	return
 }

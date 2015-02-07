@@ -28,7 +28,7 @@ func errorReturningHandler(cx *clusterrpc.Context) {
 	cx.Fail("Some error occurred in handler, abort")
 	if !timed_out {
 		timed_out = true
-		time.Sleep(20 * time.Second)
+		time.Sleep(15 * time.Second)
 	}
 	return
 }
@@ -45,7 +45,7 @@ func redirectHandler(cx *clusterrpc.Context) {
 }
 
 func server() {
-	srv := clusterrpc.NewServer("127.0.0.1", 9000, 4)
+	srv := clusterrpc.NewServer("127.0.0.1", 9000, 1)
 	srv.SetLoglevel(clusterrpc.LOGLEVEL_DEBUG)
 	srv.RegisterEndpoint("EchoService", "Echo", echoHandler)
 	srv.RegisterEndpoint("EchoService", "Error", errorReturningHandler)

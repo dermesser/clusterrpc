@@ -27,6 +27,8 @@ message RPCResponse {
         STATUS_SERVER_ERROR = 5;
         // The requested timeout has been expired
         STATUS_TIMEOUT = 6;
+        // The server is overloaded (503)
+        STATUS_OVERLOADED_RETRY = 7;
     }
 
     optional string redir_host = 2;

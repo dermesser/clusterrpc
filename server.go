@@ -12,9 +12,6 @@ import (
 	zmq "github.com/pebbe/zmq4"
 )
 
-const BACKEND_ROUTER_PATH string = "inproc://rpc_backend_router"
-const MAGIC_READY_STRING string = "___//READY\\___"
-
 /*
 Handles incoming requests and registering of handler functions.
 */
