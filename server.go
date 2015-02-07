@@ -1,7 +1,6 @@
 package clusterrpc
 
 import (
-	"clusterrpc/proto"
 	"errors"
 	"fmt"
 	"io"
@@ -10,25 +9,25 @@ import (
 	"os"
 	"time"
 
-	pb "code.google.com/p/goprotobuf/proto"
-	zmq4 "github.com/pebbe/zmq4"
+	zmq "github.com/pebbe/zmq4"
 )
 
-const DEALERPATH string = "inproc://rpc_dealer"
+const BACKEND_ROUTER_PATH string = "inproc://rpc_backend_router"
+const MAGIC_READY_STRING string = "___//READY\\___"
 
 /*
 Handles incoming requests and registering of handler functions.
 */
 type Server struct {
-	zmq_context *zmq4.Context
+	zmq_context *zmq.Context
 	// Router receives new requests, dealer distributes them between the threads
-	router, dealer *zmq4.Socket
-	services       map[string]*service
-	logger         *log.Logger
+	frontend_router, backend_router *zmq.Socket
+	services                        map[string]*service
+	logger                          *log.Logger
 	// The timeout only applies on client connections (R/W), not the Listener
 	timeout   time.Duration
 	loglevel  LOGLEVEL_T
-	n_threads uint32
+	n_threads int
 }
 
 /*
@@ -49,72 +48,74 @@ Use the setter functions described below before calling Start(), otherwise they 
 be ignored.
 
 */
-func NewServer(laddr string, port, n_threads uint32) (srv *Server) {
+func NewServer(laddr string, port, worker_threads int) (srv *Server) {
 
 	srv = new(Server)
 	srv.services = make(map[string]*service)
 	srv.logger = log.New(os.Stderr, "clusterrpc.Server: ", log.Lmicroseconds)
 	srv.loglevel = LOGLEVEL_WARNINGS
-	srv.n_threads = n_threads
+	srv.n_threads = worker_threads
 	srv.timeout = time.Second * 30
 
-	if n_threads <= 0 {
+	if worker_threads <= 0 {
 		srv.logger.Println("Number of threads must be 1 or higher")
 		return nil
 	}
 
 	var err error
-	srv.zmq_context, err = zmq4.NewContext()
+	srv.zmq_context, err = zmq.NewContext()
 
 	if err != nil {
 		srv.logger.Println("Error when creating context:", err.Error())
 		return nil
 	}
 
-	srv.router, err = srv.zmq_context.NewSocket(zmq4.ROUTER)
+	srv.frontend_router, err = srv.zmq_context.NewSocket(zmq.ROUTER)
 
 	if err != nil {
 		srv.logger.Println("Error when creating Router socket:", err.Error())
 		return nil
 	}
 
-	srv.logger.Println("Bound to TCP address", fmt.Sprintf("tcp://%s:%d", laddr, port))
-	err = srv.router.Bind(fmt.Sprintf("tcp://%s:%d", laddr, port))
+	if srv.loglevel >= LOGLEVEL_INFO {
+		srv.logger.Println("Binding frontend to TCP address", fmt.Sprintf("tcp://%s:%d", laddr, port))
+	}
+	err = srv.frontend_router.Bind(fmt.Sprintf("tcp://%s:%d", laddr, port))
 
 	if err != nil {
 		srv.logger.Println("Error when binding Router socket:", err.Error())
 		return nil
 	}
 
-	srv.dealer, err = srv.zmq_context.NewSocket(zmq4.DEALER)
+	srv.backend_router, err = srv.zmq_context.NewSocket(zmq.ROUTER)
 
 	if err != nil {
-		srv.logger.Println("Error when creating Dealer socket:", err.Error())
+		srv.logger.Println("Error when creating backend router socket:", err.Error())
 		srv = nil
 		return
 	}
 
-	err = srv.dealer.Bind(DEALERPATH)
+	err = srv.backend_router.Bind(BACKEND_ROUTER_PATH)
 
 	if err != nil {
-		srv.logger.Println("Error when binding Dealer socket:", err.Error())
+		srv.logger.Println("Error when binding backend router socket:", err.Error())
 		srv = nil
 		return
 	}
 
-	go zmq4.Proxy(srv.router, srv.dealer, nil)
+	// Sockets are taken from srv
+	go srv.loadbalance()
 
 	return
 }
 
 /*
-Starts accepting messages. Returns an error if any thread couldn't set up its socket,
-otherwise nil.
+Starts message-accepting threads. Returns an error if any thread couldn't set up its socket,
+otherwise nil. The error is logged at any LOGLEVEL.
 */
 func (srv *Server) Start() error {
 
-	var i uint32 = 0
-	for ; i < srv.n_threads-1; i++ {
+	for i := 0; i < srv.n_threads-1; i++ {
 		err := srv.thread(i, false)
 
 		if err != nil {
@@ -218,175 +219,4 @@ func (srv *Server) UnregisterEndpoint(svc, endpoint string) (err error) {
 	}
 
 	return
-}
-
-func (srv *Server) thread(n uint32, spawn bool) error {
-	sock, err := srv.zmq_context.NewSocket(zmq4.REP)
-
-	if err != nil {
-		if srv.loglevel >= LOGLEVEL_ERRORS {
-			srv.logger.Println("Thread", n, "could not create socket, exiting!")
-		}
-		return err
-	}
-
-	err = sock.Connect(DEALERPATH)
-
-	if err != nil {
-		if srv.loglevel >= LOGLEVEL_ERRORS {
-			srv.logger.Println("Thread", n, "could not connect to Dealer, exiting!")
-		}
-		return err
-	}
-
-	sock.SetSndtimeo(srv.timeout)
-
-	if !spawn {
-		go srv.acceptRequests(sock)
-	} else {
-		srv.acceptRequests(sock)
-	}
-	return nil
-}
-
-// This function runs in the (few) threads of the RPC server.
-func (srv *Server) acceptRequests(sock *zmq4.Socket) error {
-
-	for true {
-		msgs, err := sock.RecvMessage(0)
-
-		if srv.loglevel >= LOGLEVEL_INFO {
-			srv.logger.Printf("Received message\n")
-		}
-		if err == nil {
-			srv.handleRequest(msgs[0], sock)
-		} else {
-			if srv.loglevel >= LOGLEVEL_WARNINGS {
-				srv.logger.Println("Skipped incoming message, error:", err.Error())
-			}
-			continue
-		}
-
-	}
-	return nil
-}
-
-// Handle one request.
-// request[0] is the identity, request[1] is empty, request[2] is the actual data.
-// TODO Maybe break this up a little bit?
-func (srv *Server) handleRequest(request string, sock *zmq4.Socket) {
-
-	rqproto := proto.RPCRequest{}
-	pberr := pb.Unmarshal([]byte(request), &rqproto)
-
-	if pberr != nil {
-		if srv.loglevel >= LOGLEVEL_ERRORS {
-			srv.logger.Printf("PB unmarshaling error: %s in request from zmq-id %x", pberr.Error(), request[0])
-		}
-		// We can't send an error response because we don't even have a sequence number
-		sock.SendMessage(request, "", "")
-		return
-	}
-
-	caller_id := rqproto.GetCallerId()
-
-	// It is too late... we can discard this request
-	if rqproto.GetDeadline() > 0 && rqproto.GetDeadline() < time.Now().Unix() {
-		if srv.loglevel >= LOGLEVEL_WARNINGS {
-			delta := time.Now().Unix() - rqproto.GetDeadline()
-			srv.logger.Printf("[%s/%d] Timeout occurred, deadline was %d (%d s)", caller_id, rqproto.GetSequenceNumber(), rqproto.GetDeadline(), delta)
-		}
-		srv.sendError(sock, rqproto, proto.RPCResponse_STATUS_TIMEOUT)
-		return
-	}
-
-	// Find matching endpoint
-	srvc, srvc_found := srv.services[rqproto.GetSrvc()]
-
-	if !srvc_found {
-		if srv.loglevel >= LOGLEVEL_WARNINGS {
-			srv.logger.Printf("[%s/%d] NOT_FOUND response to request for service %s\n", caller_id, rqproto.GetSequenceNumber(), rqproto.GetSrvc())
-		}
-		srv.sendError(sock, rqproto, proto.RPCResponse_STATUS_NOT_FOUND)
-		return
-	} else {
-		if handler, endpoint_found := srvc.endpoints[rqproto.GetProcedure()]; !endpoint_found {
-			if srv.loglevel >= LOGLEVEL_WARNINGS {
-				srv.logger.Printf("[%s/%d] NOT_FOUND response to request for endpoint %s\n", caller_id, rqproto.GetSequenceNumber(), rqproto.GetSrvc()+"."+rqproto.GetProcedure())
-			}
-			srv.sendError(sock, rqproto, proto.RPCResponse_STATUS_NOT_FOUND)
-			return
-		} else {
-			cx := NewContext([]byte(rqproto.GetData()))
-			handler(cx)
-
-			rpproto := srv.contextToRPCResponse(cx)
-			rpproto.SequenceNumber = pb.Uint64(rqproto.GetSequenceNumber())
-
-			response_serialized, pberr := pb.Marshal(&rpproto)
-
-			if pberr != nil {
-				srv.sendError(sock, rqproto, proto.RPCResponse_STATUS_SERVER_ERROR)
-
-				if srv.loglevel >= LOGLEVEL_ERRORS {
-					srv.logger.Printf("[%s/%d] Error when serializing RPCResponse: %s\n", caller_id, rqproto.GetSequenceNumber(), pberr.Error())
-				}
-			} else {
-
-				_, err := sock.SendMessage(string(response_serialized))
-
-				if err != nil {
-					if srv.loglevel >= LOGLEVEL_WARNINGS {
-						srv.logger.Printf("[%s/%d] Error when sending response; %s\n", caller_id, rqproto.GetSequenceNumber(), err.Error())
-					}
-					return
-				}
-
-				if srv.loglevel >= LOGLEVEL_DEBUG {
-					srv.logger.Printf("[%s/%d] Sent response.\n", caller_id, rqproto.GetSequenceNumber())
-				}
-			}
-		}
-	}
-}
-
-func (srv *Server) contextToRPCResponse(cx *Context) proto.RPCResponse {
-	rpproto := proto.RPCResponse{}
-	rpproto.ResponseStatus = new(proto.RPCResponse_Status)
-
-	if !cx.failed {
-		*rpproto.ResponseStatus = proto.RPCResponse_STATUS_OK
-	} else {
-		*rpproto.ResponseStatus = proto.RPCResponse_STATUS_NOT_OK
-		rpproto.ErrorMessage = pb.String(cx.errorMessage)
-	}
-
-	rpproto.ResponseData = pb.String(string(cx.result))
-
-	if cx.redirected {
-		rpproto.RedirHost = pb.String(cx.redir_host)
-		rpproto.RedirPort = pb.Uint32(cx.redir_port)
-		*rpproto.ResponseStatus = proto.RPCResponse_STATUS_REDIRECT
-	}
-
-	return rpproto
-}
-
-// "one-shot" -- doesn't catch Write() errors
-func (srv *Server) sendError(sock *zmq4.Socket, rq proto.RPCRequest, s proto.RPCResponse_Status) {
-	response := proto.RPCResponse{}
-	response.SequenceNumber = rq.SequenceNumber
-
-	response.ResponseStatus = new(proto.RPCResponse_Status)
-	*response.ResponseStatus = s
-
-	buf, err := pb.Marshal(&response)
-
-	if err != nil {
-		return // Let the client time out. We can't do anything (although this isn't supposed to happen)
-	}
-
-	// Will fail if we send a STATUS_TIMEOUT message because the client is likely to have closed the
-	// connection by now.
-	sock.SendMessage(buf)
 }
