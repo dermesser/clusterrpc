@@ -12,6 +12,7 @@ import (
 
 const BACKEND_ROUTER_PATH string = "inproc://rpc_backend_router"
 const MAGIC_READY_STRING string = "___//READY\\___"
+const OUTSTANDING_REQUESTS_PER_THREAD int = 50
 
 /*
 This file has the internal functions, the actual server; server.go remains
@@ -75,10 +76,12 @@ func (srv *Server) loadbalance() {
 						if err != nil && srv.loglevel >= LOGLEVEL_ERRORS {
 							srv.logger.Println("Error when sending to backend router:", err.Error())
 						}
-					} else if todo_queue.Len() < srv.n_threads*50 { // We allow 50 outstanding requests per thread. Arbitrarily.
+					} else if todo_queue.Len() < srv.n_threads*OUTSTANDING_REQUESTS_PER_THREAD { // We allow 50 outstanding requests per thread. Arbitrarily.
 						todo_queue.PushBack(msgs)
 
-						if srv.loglevel >= LOGLEVEL_INFO {
+						if srv.loglevel >= LOGLEVEL_WARNINGS && todo_queue.Len() > int(0.8*float64(srv.n_threads*OUTSTANDING_REQUESTS_PER_THREAD)) {
+							srv.logger.Printf("Queue is now at more than 80% fullness. Consider increasing # of workers (%d/%d)", todo_queue.Len(), srv.n_threads*OUTSTANDING_REQUESTS_PER_THREAD)
+						} else if srv.loglevel >= LOGLEVEL_DEBUG {
 							srv.logger.Println("Queued request. Current queue length:", todo_queue.Len())
 						}
 					} else if srv.loglevel >= LOGLEVEL_WARNINGS { // Could not queue, drop
