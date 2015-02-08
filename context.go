@@ -14,7 +14,7 @@ type Context struct {
 	redir_port         uint
 }
 
-func NewContext(input []byte) *Context {
+func newContext(input []byte) *Context {
 	c := new(Context)
 	c.input = input
 	c.failed = false
