@@ -19,5 +19,21 @@ You probably need to install libzeromq >= 4 before being able to build clusterrp
 
 For the architecture, especially the ZeroMQ patterns used, refer to
 https://docs.google.com/drawings/d/1rERuS_D-5gAr8ImQ4kTPrDeZoEmOHNnG-WCSiLI5kUw/edit?usp=sharing
+
+As of 25fe4b5, one client and one server both running on one processor (GOMAXPROCS=1;
+Intel(R) Core(TM) i5 CPU       M 460  @ 2.53GHz) via localhost were capable of supporting between 5350
+requests per second (with 35 bytes of payload) and 6850 requests per second (1 byte payload). This is
+not good, but also not bad, given the relatively complex routing and load balancing structure.
+The server scales with the number of processes (client and server with both GOMAXPROCS=2 reached 7900 RPS,
+10500 RPS with server's GOMAXPROCS=4)
+
+When trying to find a good number of threads, keep in mind that one server process runs at least
+three threads: One ZeroMQ networking thread (capable of roughly 1 GB/s, according to ZeroMQ documentation),
+one load-balancing thread (shuffling messages between the frontend socket and the worker threads) and
+finally (of course) one worker thread. Load-balancer and networking thread are usually not as heavily
+used, so they don't need dedicated cores. However, you probably shouldn't use more workers than cores
+in your machine, except n_cores == 1, then two might be better, in case the workers are doing
+blocking operations (if they do so very frequently, an even higher number can be useful).
+
 */
 package clusterrpc

@@ -41,6 +41,9 @@ Create server listening on the specified laddr:port. laddr has to be "*" or an I
 do not work. There is usually only one server listening per process
 (though it is possible to use multiple servers on different ports, of course)
 
+worker_threads is the number of workers; however, there are (additionally) at least one load-balancing thread
+and one ZeroMQ networking thread.
+
 Use the setter functions described below before calling Start(), otherwise they might
 be ignored.
 
