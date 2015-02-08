@@ -77,6 +77,10 @@ func (srv *Server) loadbalance() {
 						}
 					} else if todo_queue.Len() < srv.n_threads*50 { // We allow 50 outstanding requests per thread. Arbitrarily.
 						todo_queue.PushBack(msgs)
+
+						if srv.loglevel >= LOGLEVEL_INFO {
+							srv.logger.Println("Queued request. Current queue length:", todo_queue.Len())
+						}
 					} else if srv.loglevel >= LOGLEVEL_WARNINGS { // Could not queue, drop
 						srv.logger.Println("Dropped message; no available workers, queue full")
 					}
@@ -175,10 +179,10 @@ func (srv *Server) acceptRequests(sock *zmq.Socket) error {
 	for true {
 		msgs, err := sock.RecvMessageBytes(0)
 
-		if srv.loglevel >= LOGLEVEL_INFO {
-			srv.logger.Printf("Received message from %x\n", msgs[0])
-		}
 		if err == nil && len(msgs) >= 3 {
+			if srv.loglevel >= LOGLEVEL_INFO {
+				srv.logger.Printf("Received message from %x\n", msgs[0])
+			}
 			srv.handleRequest(msgs[2], msgs[0], sock)
 		} else {
 			if srv.loglevel >= LOGLEVEL_WARNINGS {
@@ -215,12 +219,13 @@ func (srv *Server) handleRequest(data, client_identity []byte, sock *zmq.Socket)
 	caller_id := rqproto.GetCallerId()
 
 	// It is too late... we can discard this request
-	if rqproto.GetDeadline() > 0 && rqproto.GetDeadline() < time.Now().Unix() {
+	if rqproto.GetDeadline() > 0 && time.Now().Unix() > rqproto.GetDeadline() {
 		if srv.loglevel >= LOGLEVEL_WARNINGS {
 			delta := time.Now().Unix() - rqproto.GetDeadline()
 			srv.logger.Printf("[%x/%s/%d] Timeout occurred, deadline was %d (%d s)", client_identity, caller_id, rqproto.GetSequenceNumber(), rqproto.GetDeadline(), delta)
 		}
-		// Fail silently
+		// Sending this to get the REQ socket in the right state
+		srv.sendError(sock, rqproto, proto.RPCResponse_STATUS_TIMEOUT, client_identity)
 		return
 	}
 

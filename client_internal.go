@@ -4,6 +4,7 @@ import (
 	"clusterrpc/proto"
 	"errors"
 	"fmt"
+	"time"
 
 	pb "code.google.com/p/goprotobuf/proto"
 	zmq "github.com/pebbe/zmq4"
@@ -82,6 +83,10 @@ func (cl *Client) requestInternal(data []byte, service, endpoint string, retries
 	rqproto.Procedure = pb.String(endpoint)
 	rqproto.Data = pb.String(string(data))
 	rqproto.CallerId = pb.String(cl.name)
+
+	if cl.timeout > 0 {
+		rqproto.Deadline = pb.Int64(time.Now().Unix() + int64(cl.timeout.Seconds()))
+	}
 
 	rq_serialized, pberr := pb.Marshal(&rqproto)
 
