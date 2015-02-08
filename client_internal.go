@@ -133,6 +133,11 @@ func (cl *Client) requestInternal(data []byte, service, endpoint string, retries
 				return msg, nil
 			}
 
+		} else {
+			if cl.loglevel >= LOGLEVEL_ERRORS {
+				cl.logger.Printf("[%s/%d] Timeout occurred, retries failed. Giving up\n")
+				return nil, err
+			}
 		}
 		return nil, err
 	}

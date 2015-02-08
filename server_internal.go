@@ -249,10 +249,13 @@ func (srv *Server) handleRequest(data, client_identity []byte, sock *zmq.Socket)
 			srv.sendError(sock, rqproto, proto.RPCResponse_STATUS_NOT_FOUND, client_identity)
 			return
 		} else {
+			if srv.loglevel >= LOGLEVEL_DEBUG {
+				srv.logger.Printf("[%x/%s/%d] Calling endpoint %s.%s...\n", client_identity, caller_id, rqproto.GetSequenceNumber(), rqproto.GetSrvc(), rqproto.GetProcedure())
+			}
 			cx := NewContext([]byte(rqproto.GetData()))
 			handler(cx)
 
-			rpproto := srv.contextToRPCResponse(cx)
+			rpproto := cx.toRPCResponse()
 			rpproto.SequenceNumber = pb.Uint64(rqproto.GetSequenceNumber())
 
 			response_serialized, pberr := pb.Marshal(&rpproto)
@@ -280,28 +283,6 @@ func (srv *Server) handleRequest(data, client_identity []byte, sock *zmq.Socket)
 			}
 		}
 	}
-}
-
-func (srv *Server) contextToRPCResponse(cx *Context) proto.RPCResponse {
-	rpproto := proto.RPCResponse{}
-	rpproto.ResponseStatus = new(proto.RPCResponse_Status)
-
-	if !cx.failed {
-		*rpproto.ResponseStatus = proto.RPCResponse_STATUS_OK
-	} else {
-		*rpproto.ResponseStatus = proto.RPCResponse_STATUS_NOT_OK
-		rpproto.ErrorMessage = pb.String(cx.errorMessage)
-	}
-
-	rpproto.ResponseData = pb.String(string(cx.result))
-
-	if cx.redirected {
-		rpproto.RedirHost = pb.String(cx.redir_host)
-		rpproto.RedirPort = pb.Uint32(cx.redir_port)
-		*rpproto.ResponseStatus = proto.RPCResponse_STATUS_REDIRECT
-	}
-
-	return rpproto
 }
 
 // "one-shot" -- doesn't catch Write() errors. But needs a lot of context
