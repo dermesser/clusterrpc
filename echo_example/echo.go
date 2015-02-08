@@ -28,7 +28,7 @@ func errorReturningHandler(cx *clusterrpc.Context) {
 	cx.Fail("Some error occurred in handler, abort")
 	if !timed_out {
 		timed_out = true
-		time.Sleep(15 * time.Second)
+		time.Sleep(7 * time.Second)
 	}
 	return
 }
@@ -66,6 +66,7 @@ func client() {
 	}
 	defer cl.Close()
 	cl.SetLoglevel(clusterrpc.LOGLEVEL_DEBUG)
+	cl.SetTimeout(5 * time.Second)
 
 	/// Plain echo
 	resp, err := cl.Request([]byte("helloworld"), "EchoService", "Echo")

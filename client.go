@@ -115,10 +115,10 @@ func (cl *Client) SetTimeout(timeout time.Duration) {
 
 	if timeout == 0 {
 		timeout = -1
-		cl.timeout = timeout
-		cl.channel.SetSndtimeo(timeout)
-		cl.channel.SetRcvtimeo(timeout)
 	}
+	cl.timeout = timeout
+	cl.channel.SetSndtimeo(timeout)
+	cl.channel.SetRcvtimeo(timeout)
 }
 
 /*

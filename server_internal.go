@@ -2,6 +2,7 @@ package clusterrpc
 
 import (
 	"clusterrpc/proto"
+	"container/list"
 	"fmt"
 	"time"
 
@@ -22,10 +23,14 @@ Load balancer using the least used worker: We have a channel of backend identiti
 A backend is queued when it sends a response, and dequeued when we have a client request.
 */
 func (srv *Server) loadbalance() {
-	queue := make(chan string, srv.n_threads)
+	// List of workers that are free -- list of []byte!
+	worker_queue := list.New()
+
 	// todo_queue is for incoming requests that find no available worker immediately.
 	// We're allowing a backlog of 50 outstanding requests per task; over that, we're dropping
-	todo_queue := make(chan [][]byte, srv.n_threads*50)
+	//
+	// List of [][]byte!
+	todo_queue := list.New()
 
 	poller := zmq.NewPoller()
 	poller.Add(srv.frontend_router, zmq.POLLIN)
@@ -59,29 +64,16 @@ func (srv *Server) loadbalance() {
 					}
 
 					// Try to find worker to send this request to
-					select {
-					// Skipped if none available
-					case node := <-queue:
-						_, err = srv.backend_router.SendMessage(node, "", msgs) // [worker identity, "", [client identity, "", RPCRequest]]
-						if err != nil {
-							if srv.loglevel >= LOGLEVEL_ERRORS {
-								srv.logger.Println("Error when sending to backend router:", err.Error())
-							}
+					if worker_id := worker_queue.Front(); worker_id != nil {
+						_, err = srv.backend_router.SendMessage(worker_id.Value.([]byte), "", msgs) // [worker identity, "", [client identity, "", RPCRequest]]
+						worker_queue.Remove(worker_id)
+
+						if err != nil && srv.loglevel >= LOGLEVEL_ERRORS {
+							srv.logger.Println("Error when sending to backend router:", err.Error())
 						}
-						continue // We're done here
-					default:
-					}
-
-					// We haven't found a worker, try to queue the message
-					select {
-					case todo_queue <- msgs:
-						continue
-					default:
-
-					}
-
-					// Could not queue, drop.
-					if srv.loglevel >= LOGLEVEL_WARNINGS {
+					} else if todo_queue.Len() < srv.n_threads*50 { // We allow 50 outstanding requests per thread. Arbitrarily.
+						todo_queue.PushBack(msgs)
+					} else if srv.loglevel >= LOGLEVEL_WARNINGS { // Could not queue, drop
 						srv.logger.Println("Dropped message; no available workers, queue full")
 					}
 
@@ -102,7 +94,7 @@ func (srv *Server) loadbalance() {
 					}
 
 					backend_identity := msgs[0]
-					queue <- string(backend_identity)
+					worker_queue.PushBack(backend_identity)
 
 					// third frame is MAGIC_READY_STRING when a new worker joins.
 					// Otherwise, send response to client.
@@ -117,10 +109,10 @@ func (srv *Server) loadbalance() {
 					}
 
 					// Now that we have a new free worker, let's see if there's work in the queue...
-					if len(todo_queue) > 0 && len(queue) > 0 {
-						queued_messages := <-todo_queue
-						worker_id := <-queue
-						_, err = srv.backend_router.SendMessage(worker_id, "", queued_messages) // [worker identity, "", [client identity, "", RPCRequest]]
+					if todo_queue.Len() > 0 && worker_queue.Len() > 0 {
+						request_message := todo_queue.Remove(todo_queue.Front()).([][]byte)
+						worker_id := worker_queue.Remove(worker_queue.Front()).([]byte)
+						_, err = srv.backend_router.SendMessage(worker_id, "", request_message) // [worker identity, "", [client identity, "", RPCRequest]]
 						if err != nil {
 							if srv.loglevel >= LOGLEVEL_ERRORS {
 								srv.logger.Println("Error when sending to backend router:", err.Error())
