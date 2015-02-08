@@ -27,7 +27,7 @@ func (cl *Client) createChannel() error {
 	err = cl.channel.Connect(fmt.Sprintf("tcp://%s:%d", cl.raddr, cl.rport))
 
 	if err != nil {
-		cl.logger.Println("Error when connecting Req socket:", err.Error())
+		cl.logger.Println("Error when connecting Req socket:", err.Error(), fmt.Sprintf("tcp://%s:%d", cl.raddr, cl.rport))
 		return err
 	}
 
