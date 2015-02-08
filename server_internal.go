@@ -63,7 +63,8 @@ func (srv *Server) loadbalance() {
 					}
 					if len(msgs) < 3 {
 						if srv.loglevel >= LOGLEVEL_ERRORS {
-							srv.logger.Println("Error: Skipping message with less than 3 frames from frontend router;", len(msgs), "frames received")
+							srv.logger.Println(
+								"Error: Skipping message with less than 3 frames from frontend router;", len(msgs), "frames received")
 						}
 						continue
 					}
@@ -204,7 +205,6 @@ func (srv *Server) acceptRequests(sock *zmq.Socket, worker_identity string) erro
 
 // Handle one request.
 // client_identity is the unique number assigned by ZeroMQ. data is the raw data input from the client.
-// TODO Maybe break this up a little bit?
 func (srv *Server) handleRequest(data, client_identity []byte, sock *zmq.Socket) {
 
 	rqproto := proto.RPCRequest{}

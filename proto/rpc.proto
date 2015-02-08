@@ -29,14 +29,22 @@ message RPCResponse {
         STATUS_TIMEOUT = 6;
         // The server is overloaded (503)
         STATUS_OVERLOADED_RETRY = 7;
+        // We avoided a possible redirect loop, but could not get an answer.
+        STATUS_REDIRECT_TOO_OFTEN = 8;
+        // We couldn't even send the request (PB serialization error, ...)
+        STATUS_CLIENT_REQUEST_ERROR = 9;
+        // We couldn't send the request because of network/socket issues.
+        STATUS_CLIENT_NETWORK_ERROR = 10;
     }
 
     optional string redir_host = 2;
     optional uint32 redir_port = 3;
+    optional string redir_service = 4;
+    optional string redir_endpoint = 5;
 
-    optional string response_data = 4;
+    optional string response_data = 6;
 
-    required Status response_status = 5;
-    optional string error_message = 6;
+    required Status response_status = 7;
+    optional string error_message = 8;
 }
 

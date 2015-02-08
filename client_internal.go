@@ -2,7 +2,6 @@ package clusterrpc
 
 import (
 	"clusterrpc/proto"
-	"errors"
 	"fmt"
 	"time"
 
@@ -48,7 +47,7 @@ func requestOneShot(raddr string, rport uint, service, endpoint string, request_
 	}
 
 	if err != nil {
-		return nil, err
+		return nil, RequestError{status: proto.RPCResponse_STATUS_CLIENT_REQUEST_ERROR, message: err.Error()}
 	}
 
 	defer cl.Close()
@@ -94,7 +93,7 @@ func (cl *Client) requestInternal(data []byte, service, endpoint string, retries
 		if cl.loglevel >= LOGLEVEL_WARNINGS {
 			cl.logger.Println("PB error!", pberr.Error())
 		}
-		return nil, pberr
+		return nil, RequestError{status: proto.RPCResponse_STATUS_CLIENT_REQUEST_ERROR, message: pberr.Error()}
 	}
 
 	_, err := cl.channel.SendBytes(rq_serialized, 0)
@@ -103,7 +102,7 @@ func (cl *Client) requestInternal(data []byte, service, endpoint string, retries
 		if cl.loglevel >= LOGLEVEL_ERRORS {
 			cl.logger.Printf("[%s/%d] Could not send message to %s. Error: %s\n", cl.name, rqproto.GetSequenceNumber(), service+"."+endpoint, err.Error())
 		}
-		return nil, err
+		return nil, RequestError{status: proto.RPCResponse_STATUS_CLIENT_NETWORK_ERROR, message: err.Error()}
 	} else {
 		if cl.loglevel >= LOGLEVEL_DEBUG {
 			cl.logger.Printf("[%s/%d] Sent request to %s\n", cl.name, rqproto.GetSequenceNumber(), service+"."+endpoint)
@@ -122,6 +121,7 @@ func (cl *Client) requestInternal(data []byte, service, endpoint string, retries
 			}
 
 			// Create new channel, old one is "confused" (REQ has an FSM internally allowing only req/rep/req/rep...)
+			cl.channel.Close()
 			cl.createChannel()
 			cl.lock.Unlock()
 			msg, next_err := cl.requestInternal(data, service, endpoint, retries_left-1)
@@ -133,13 +133,17 @@ func (cl *Client) requestInternal(data []byte, service, endpoint string, retries
 				return msg, nil
 			}
 
+		} else if 11 == uint32(err.(zmq.Errno)) {
+			if cl.loglevel >= LOGLEVEL_ERRORS {
+				cl.logger.Printf("[%s/%d] Timeout occurred, retries failed. Giving up\n", cl.name, rqproto.GetSequenceNumber())
+			}
+			return nil, RequestError{status: proto.RPCResponse_STATUS_TIMEOUT, message: err.Error()}
 		} else {
 			if cl.loglevel >= LOGLEVEL_ERRORS {
-				cl.logger.Printf("[%s/%d] Timeout occurred, retries failed. Giving up\n")
-				return nil, err
+				cl.logger.Printf("[%s/%d] Network error: %s\n", err.Error())
 			}
+			return nil, RequestError{status: proto.RPCResponse_STATUS_CLIENT_NETWORK_ERROR, message: err.Error()}
 		}
-		return nil, err
 	}
 	if cl.loglevel >= LOGLEVEL_DEBUG {
 		cl.logger.Printf("[%s/%d] Received response from %s\n", cl.name, rqproto.GetSequenceNumber(), service+"."+endpoint)
@@ -153,20 +157,26 @@ func (cl *Client) requestInternal(data []byte, service, endpoint string, retries
 		if cl.loglevel >= LOGLEVEL_ERRORS {
 			cl.logger.Printf("[%s/%d] Error when unmarshaling response: %s\n", cl.name, rqproto.GetSequenceNumber(), err.Error())
 		}
-		return nil, err
+		return nil, RequestError{status: proto.RPCResponse_STATUS_CLIENT_REQUEST_ERROR, message: err.Error()}
 	}
 
 	if respproto.GetResponseStatus() != proto.RPCResponse_STATUS_OK && respproto.GetResponseStatus() != proto.RPCResponse_STATUS_REDIRECT {
 		if cl.loglevel >= LOGLEVEL_WARNINGS {
-			cl.logger.Printf("[%s/%d] Received status other than ok from %s: %s\n", cl.name, rqproto.GetSequenceNumber(), service+"."+endpoint, StatusToString(respproto.GetResponseStatus()))
+			cl.logger.Printf("[%s/%d] Received status other than ok from %s: %s\n", cl.name, rqproto.GetSequenceNumber(), service+"."+endpoint, statusToString(respproto.GetResponseStatus()))
 		}
-		err = RequestError{status: respproto.GetResponseStatus(), message: respproto.GetErrorMessage()}
-		return nil, err
+		return nil, RequestError{status: respproto.GetResponseStatus(), message: respproto.GetErrorMessage()}
 	} else if respproto.GetResponseStatus() == proto.RPCResponse_STATUS_REDIRECT {
 		if cl.accept_redirect {
-			return requestOneShot(respproto.GetRedirHost(), uint(respproto.GetRedirPort()), service, endpoint, data, false, cl)
+			if respproto.GetRedirService() == "" || respproto.GetRedirEndpoint() == "" { // No different service.endpoint given, retry with same method
+				return requestOneShot(respproto.GetRedirHost(), uint(respproto.GetRedirPort()), service, endpoint, data, false, cl)
+			} else {
+				return requestOneShot(respproto.GetRedirHost(), uint(respproto.GetRedirPort()), respproto.GetRedirService(), respproto.GetRedirEndpoint(), data, false, cl)
+			}
 		} else {
-			return nil, errors.New("Could not follow redirect (redirect loop avoidance)")
+			if cl.loglevel >= LOGLEVEL_ERRORS {
+				cl.logger.Printf("[%s/%d] Could not follow redirect -- second server redirected, too\n", cl.name, rqproto.GetSequenceNumber())
+			}
+			return nil, RequestError{status: proto.RPCResponse_STATUS_REDIRECT_TOO_OFTEN, message: "Could not follow redirects (redirect loop avoidance)"}
 		}
 	}
 
