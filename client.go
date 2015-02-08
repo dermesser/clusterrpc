@@ -139,27 +139,25 @@ func (cl *Client) Close() {
 /*
 Call a remote procedure service.endpoint with data as input.
 
-Returns either a byte array and nil as error or a status string as the error string.
-Returned strings are
+Returns either a byte slice and nil or an undefined byte slice and a clusterrpc.RequestError.
+You can use RequestError's Status() method to get a status string such as STATUS_NOT_FOUND
 
-		"STATUS_OK" // Not returned in reality
-		"STATUS_NOT_FOUND" // Invalid service or endpoint
-		"STATUS_NOT_OK" // Handler returned an error.
-		"STATUS_SERVER_ERROR" // The clusterrpc server experienced an internal server error
-		"STATUS_TIMEOUT" // The server was not able to process the request before the set deadline
-
-Returns nil,nil after a timeout
+Returns nil,nil after a timeout.
 */
 func (cl *Client) Request(data []byte, service, endpoint string) ([]byte, error) {
 	return cl.requestInternal(data, service, endpoint, cl.eagain_retries)
 }
 
-func (cl *Client) RequestDefault(data []byte) (response []byte, e error) {
+/*
+Sends request to the default method (set by SetDefault()). error is actually a RequestError object.
+*/
+func (cl *Client) RequestDefault(data []byte) ([]byte, error) {
 	return cl.Request(data, cl.default_service, cl.default_endpoint)
 }
 
 /*
-Do one request and clean up afterwards. Not really efficient, but ok for rare use.
+Do one request and clean up afterwards. Not really efficient, but ok for rare use. error is a RequestError
+object. If the redirect is invalid, the Status() will return "STATUS_CLIENT_REQUEST_ERROR".
 
 allow_redirect does what it says; it is usually set by a client after following a redirect to
 avoid a redirect loop (A redirects to B, B redirects to A)
