@@ -41,7 +41,7 @@ func (srv *Server) loadbalance() {
 	poller.Add(srv.frontend_router, zmq.POLLIN)
 	poller.Add(srv.backend_router, zmq.POLLIN)
 
-	for true {
+	for {
 		polled, err := poller.Poll(-1)
 
 		if err != nil {
@@ -76,7 +76,7 @@ func (srv *Server) loadbalance() {
 						if err != nil && srv.loglevel >= LOGLEVEL_ERRORS {
 							srv.logger.Println("Error when sending to backend router:", err.Error())
 						}
-					} else if todo_queue.Len() < srv.n_threads*OUTSTANDING_REQUESTS_PER_THREAD { // We allow 50 outstanding requests per thread. Arbitrarily.
+					} else if todo_queue.Len() < srv.n_threads*OUTSTANDING_REQUESTS_PER_THREAD { // We're only allowing so many queued requests to prevent from complete overloading
 						todo_queue.PushBack(msgs)
 
 						if srv.loglevel >= LOGLEVEL_WARNINGS && todo_queue.Len() > int(0.8*float64(srv.n_threads*OUTSTANDING_REQUESTS_PER_THREAD)) {
@@ -168,23 +168,23 @@ func (srv *Server) thread(n int, spawn bool) error {
 	sock.SetSndtimeo(srv.timeout)
 
 	if !spawn {
-		go srv.acceptRequests(sock)
+		go srv.acceptRequests(sock, worker_identity)
 	} else {
-		srv.acceptRequests(sock)
+		srv.acceptRequests(sock, worker_identity)
 	}
 	return nil
 }
 
 // This function runs in the (few) threads of the RPC server.
-func (srv *Server) acceptRequests(sock *zmq.Socket) error {
+func (srv *Server) acceptRequests(sock *zmq.Socket, worker_identity string) error {
 
 	sock.SendMessage(MAGIC_READY_STRING)
-	for true {
+	for {
 		msgs, err := sock.RecvMessageBytes(0)
 
 		if err == nil && len(msgs) >= 3 {
-			if srv.loglevel >= LOGLEVEL_INFO {
-				srv.logger.Printf("Received message from %x\n", msgs[0])
+			if srv.loglevel >= LOGLEVEL_DEBUG {
+				srv.logger.Printf("Worker #%s received message from %x\n", worker_identity, msgs[0])
 			}
 			srv.handleRequest(msgs[2], msgs[0], sock)
 		} else {

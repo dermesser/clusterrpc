@@ -13,6 +13,7 @@ import (
 	"clusterrpc"
 	"flag"
 	"fmt"
+	"runtime"
 	"time"
 )
 
@@ -21,6 +22,11 @@ var timed_out bool = false
 func echoHandler(cx *clusterrpc.Context) {
 	cx.Success(cx.GetInput())
 	fmt.Println("Called echoHandler:", string(cx.GetInput()), len(cx.GetInput()))
+	return
+}
+
+func silentEchoHandler(cx *clusterrpc.Context) {
+	cx.Success(cx.GetInput())
 	return
 }
 
@@ -45,7 +51,7 @@ func redirectHandler(cx *clusterrpc.Context) {
 }
 
 func server() {
-	srv := clusterrpc.NewServer("127.0.0.1", 9000, 1)
+	srv := clusterrpc.NewServer("127.0.0.1", 9000, 1) // Test correct queuing.
 	srv.SetLoglevel(clusterrpc.LOGLEVEL_DEBUG)
 	srv.RegisterEndpoint("EchoService", "Echo", echoHandler)
 	srv.RegisterEndpoint("EchoService", "Error", errorReturningHandler)
@@ -134,13 +140,47 @@ func aclient() {
 	time.Sleep(3 * time.Second)
 }
 
+func benchServer() {
+	srv := clusterrpc.NewServer("127.0.0.1", 9000, runtime.GOMAXPROCS(0))
+	srv.SetLoglevel(clusterrpc.LOGLEVEL_ERRORS)
+	srv.RegisterEndpoint("EchoService", "Echo", silentEchoHandler)
+
+	e := srv.Start()
+
+	if e != nil {
+		fmt.Println(e.Error())
+	}
+}
+
+func benchClient(n int) {
+	cl, err := clusterrpc.NewClient("echo1_cl", "127.0.0.1", 9000)
+	if err != nil {
+		fmt.Println(err.Error())
+		return
+	}
+	defer cl.Close()
+	cl.SetLoglevel(clusterrpc.LOGLEVEL_ERRORS)
+	cl.SetTimeout(5 * time.Second)
+
+	for i := 0; i < n; i++ {
+		_, err := cl.Request([]byte("H"), "EchoService", "Echo")
+
+		if err != nil {
+			fmt.Println("Client benchmark error:", err.Error())
+		}
+	}
+
+}
+
 func main() {
 
-	var srv, cl, acl, both bool
-	flag.BoolVar(&srv, "srv", false, "Specify if you want us to run as server")
-	flag.BoolVar(&cl, "cl", false, "Specify if you want us to run as client")
-	flag.BoolVar(&acl, "acl", false, "Specify if you want us to run as asynchronous client")
-	flag.BoolVar(&both, "both", false, "Specify if you want us to run server and client in one process")
+	var srv, cl, acl, srvbench bool
+	var clbench int
+	flag.BoolVar(&srv, "srv", false, "Run server (localhost:9000)")
+	flag.BoolVar(&srvbench, "srvbench", false, "Run benchmark server (LOGLEVEL_ERRORS, GOMAXPROCS threads, only Echo)")
+	flag.BoolVar(&cl, "cl", false, "Run synchronous client")
+	flag.BoolVar(&acl, "acl", false, "Run the asynchronous client")
+	flag.IntVar(&clbench, "clbench", 0, "Run the benchmark client with this number of requests")
 
 	flag.Parse()
 
@@ -154,12 +194,15 @@ func main() {
 	if acl {
 		argcnt++
 	}
-	if both {
+	if srvbench {
+		argcnt++
+	}
+	if clbench > 0 {
 		argcnt++
 	}
 
 	if argcnt != 1 {
-		fmt.Println("Wrong combination: Use either -srv, -acl or -cl")
+		fmt.Println("Wrong combination: Use either -srv, -acl or -cl, -clbench or -srvbench")
 		return
 	}
 
@@ -169,14 +212,10 @@ func main() {
 		client()
 	} else if acl {
 		aclient()
-	} else if both {
-
-		go server()
-
-		time.Sleep(2 * time.Second)
-
-		client()
-
+	} else if clbench > 0 {
+		benchClient(clbench)
+	} else if srvbench {
+		benchServer()
 	}
 
 }
