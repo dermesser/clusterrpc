@@ -20,9 +20,10 @@ type Client struct {
 	logger   *log.Logger
 	loglevel LOGLEVEL_T
 
-	name            string
-	raddr           string
-	rport           uint
+	name string
+	// Slices to allow multiple connections (round-robin)
+	raddr           []string
+	rport           []uint
 	sequence_number uint64
 	timeout         time.Duration
 	// Used for default calls
@@ -35,27 +36,31 @@ type Client struct {
 /*
 Create a new client that connects to the clusterrpc server at raddr:rport.
 The client_name is used for logging purposes. The new client has a default
-timeout of 30 seconds (the network operations will time out after this duration
-and return an error).
+timeout of 5 seconds (the network operations will time out after this duration
+and return an error). Typically, a timed out request will be retried twice
+before returning (i.e. the actual timeout is 15 seconds). error is a RequestError object.
 
 */
 func NewClient(client_name, raddr string, rport uint) (cl *Client, e error) {
+	return NewClientRR(client_name, []string{raddr}, []uint{rport})
+}
 
-	cl = new(Client)
+func NewClientRR(client_name string, raddrs []string, rports []uint) (*Client, error) {
+	cl := new(Client)
 	cl.logger = log.New(os.Stderr, "clusterrpc.Client: ", log.Lmicroseconds)
 
 	cl.sequence_number = 0
-	cl.loglevel = LOGLEVEL_ERRORS
+	cl.loglevel = LOGLEVEL_WARNINGS
 	cl.name = client_name
-	cl.raddr = raddr
-	cl.rport = rport
+	cl.raddr = raddrs
+	cl.rport = rports
 	cl.accept_redirect = true
-	cl.eagain_retries = 3
-	cl.timeout = 10 * time.Second
+	cl.eagain_retries = 2
+	cl.timeout = 5 * time.Second
 
-	cl.createChannel()
+	err := cl.createChannel()
 
-	return
+	return cl, err
 }
 
 /*

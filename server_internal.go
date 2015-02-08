@@ -80,13 +80,40 @@ func (srv *Server) loadbalance() {
 					} else if todo_queue.Len() < srv.n_threads*OUTSTANDING_REQUESTS_PER_THREAD { // We're only allowing so many queued requests to prevent from complete overloading
 						todo_queue.PushBack(msgs)
 
-						if srv.loglevel >= LOGLEVEL_WARNINGS && todo_queue.Len() > int(0.8*float64(srv.n_threads*OUTSTANDING_REQUESTS_PER_THREAD)) {
-							srv.logger.Printf("Queue is now at more than 80% fullness. Consider increasing # of workers (%d/%d)", todo_queue.Len(), srv.n_threads*OUTSTANDING_REQUESTS_PER_THREAD)
+						if srv.loglevel >= LOGLEVEL_WARNINGS &&
+							todo_queue.Len() > int(0.8*float64(srv.n_threads*OUTSTANDING_REQUESTS_PER_THREAD)) {
+
+							srv.logger.Printf("Queue is now at more than 80% fullness. Consider increasing # of workers (%d/%d)",
+								todo_queue.Len(), srv.n_threads*OUTSTANDING_REQUESTS_PER_THREAD)
+
 						} else if srv.loglevel >= LOGLEVEL_DEBUG {
 							srv.logger.Println("Queued request. Current queue length:", todo_queue.Len())
 						}
-					} else if srv.loglevel >= LOGLEVEL_WARNINGS { // Could not queue, drop
-						srv.logger.Println("Dropped message; no available workers, queue full")
+					} else {
+						if srv.loglevel >= LOGLEVEL_WARNINGS { // Could not queue, drop
+							srv.logger.Println("Dropped message; no available workers, queue full")
+						}
+						// Maybe just drop silently -- this costs CPU!
+						request := proto.RPCRequest{}
+						err = pb.Unmarshal(msgs[2], &request)
+
+						if err != nil {
+							continue
+						}
+
+						response := proto.RPCResponse{}
+						response.ResponseStatus = new(proto.RPCResponse_Status)
+						*response.ResponseStatus = proto.RPCResponse_STATUS_OVERLOADED_RETRY
+						response.ErrorMessage = pb.String("Could not accept request because our queue is full. Retry later")
+						response.SequenceNumber = pb.Uint64(request.GetSequenceNumber())
+
+						respproto, err := pb.Marshal(&response)
+
+						if err != nil {
+							continue
+						}
+
+						srv.frontend_router.SendMessage(msgs[0:2], respproto)
 					}
 
 				case srv.backend_router:

@@ -20,14 +20,26 @@ func (cl *Client) createChannel() error {
 
 	if err != nil {
 		cl.logger.Println("Error when creating Req socket:", err.Error())
-		return err
+		return RequestError{status: proto.RPCResponse_STATUS_CLIENT_NETWORK_ERROR, message: err.Error()}
 	}
 
-	err = cl.channel.Connect(fmt.Sprintf("tcp://%s:%d", cl.raddr, cl.rport))
+	for i := range cl.raddr {
+		err = cl.channel.Connect(fmt.Sprintf("tcp://%s:%d", cl.raddr[i], cl.rport[i]))
 
-	if err != nil {
-		cl.logger.Println("Error when connecting Req socket:", err.Error(), fmt.Sprintf("tcp://%s:%d", cl.raddr, cl.rport))
-		return err
+		if err != nil {
+			if len(cl.raddr) < 2 { // only return error if the only connection of this REQ socket couldn't be established
+				if cl.loglevel >= LOGLEVEL_ERRORS {
+					cl.logger.Println("Could not establish connection to single peer;",
+						err.Error, fmt.Sprintf("tcp://%s:%d", cl.raddr[i], cl.rport[i]))
+				}
+				return RequestError{status: proto.RPCResponse_STATUS_CLIENT_NETWORK_ERROR, message: err.Error()}
+			} else {
+				if cl.loglevel >= LOGLEVEL_WARNINGS {
+					cl.logger.Println("Error when connecting Req socket:",
+						err.Error(), fmt.Sprintf("tcp://%s:%d", cl.raddr[i], cl.rport[i]))
+				}
+			}
+		}
 	}
 
 	cl.channel.SetSndtimeo(cl.timeout)
