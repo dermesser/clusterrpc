@@ -48,7 +48,7 @@ Use the setter functions described below before calling Start(), otherwise they 
 be ignored.
 
 */
-func NewServer(laddr string, port, worker_threads int) (srv *Server) {
+func NewServer(laddr string, port uint, worker_threads int) (srv *Server) {
 
 	srv = new(Server)
 	srv.services = make(map[string]*service)

@@ -18,8 +18,8 @@ type asyncRequest struct {
 }
 
 type AsyncClient struct {
-	call_channel chan *asyncRequest
-	qlength      uint32
+	request_queue chan *asyncRequest
+	qlength       uint
 
 	logger   *log.Logger
 	loglevel LOGLEVEL_T
@@ -28,20 +28,20 @@ type AsyncClient struct {
 
 /*
 Create an asynchronous client. An AsyncClient is also called using Request(), but it
-queues the request (in a channel with the queue length qlength). The requests
-themselves are sent synchronously (REQ/REP), but the initial Request() function returns immediately
-if the channel queue is not full yet. The queuing avoids a too high CPU use; higher parallelism
-can be achieved by using multiple AsyncClients.
+queues the request (in a buffered channel with the length queue_length). The requests
+themselves are sent synchronously (REQ/REP), but the Request() function returns immediately
+if the channel queue is not full yet. The queuing avoids a too high CPU use on both server and client;
+higher parallelism can simply be achieved by using multiple AsyncClients.
 
 client_name is an arbitrary name that can be used to identify this client at the server (e.g.
 in logs)
 */
-func NewAsyncClient(client_name, raddr string, rport, qlength uint32) (*AsyncClient, error) {
+func NewAsyncClient(client_name, raddr string, rport, queue_length uint) (*AsyncClient, error) {
 
 	cl := new(AsyncClient)
 	cl.logger = log.New(os.Stderr, "clusterrpc.AsyncClient "+client_name+": ", log.Lmicroseconds)
 	cl.loglevel = LOGLEVEL_ERRORS
-	cl.qlength = qlength
+	cl.qlength = queue_length
 
 	var err error
 	cl.client, err = NewClient(client_name, raddr, rport)
@@ -51,7 +51,7 @@ func NewAsyncClient(client_name, raddr string, rport, qlength uint32) (*AsyncCli
 		return nil, err
 	}
 
-	cl.call_channel = make(chan *asyncRequest, qlength)
+	cl.request_queue = make(chan *asyncRequest, queue_length)
 	go cl.startThread()
 
 	return cl, nil
@@ -88,18 +88,18 @@ func (cl *AsyncClient) SetTimeout(d time.Duration) {
 }
 
 func (cl *AsyncClient) Close() {
-	cl.call_channel <- &asyncRequest{terminate: true}
+	cl.request_queue <- &asyncRequest{terminate: true}
 }
 
 func (cl *AsyncClient) startThread() {
-	for rq := range cl.call_channel {
+	for rq := range cl.request_queue {
 		if rq.terminate {
 			cl.client.Close()
-			close(cl.call_channel)
+			close(cl.request_queue)
 			return
 		}
 
-		if cl.loglevel >= LOGLEVEL_WARNINGS && float64(len(cl.call_channel)) > 0.7*float64(cl.qlength) {
+		if cl.loglevel >= LOGLEVEL_WARNINGS && float64(len(cl.request_queue)) > 0.7*float64(cl.qlength) {
 			cl.logger.Println("AsyncClient", cl.client.name, "Warning: Queue is fuller than 70% of its capacity!")
 		}
 
@@ -117,6 +117,6 @@ func (cl *AsyncClient) Request(data []byte, service, endpoint string, cb Callbac
 	rq.service = service
 	rq.terminate = false
 
-	cl.call_channel <- &rq
+	cl.request_queue <- &rq
 	return
 }

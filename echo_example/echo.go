@@ -50,8 +50,8 @@ func redirectHandler(cx *clusterrpc.Context) {
 	i++
 }
 
-func server() {
-	srv := clusterrpc.NewServer("127.0.0.1", 9000, 1) // Test correct queuing.
+func server(host string, port uint) {
+	srv := clusterrpc.NewServer(host, port, 1) // Test correct queuing.
 	srv.SetLoglevel(clusterrpc.LOGLEVEL_DEBUG)
 	srv.RegisterEndpoint("EchoService", "Echo", echoHandler)
 	srv.RegisterEndpoint("EchoService", "Error", errorReturningHandler)
@@ -64,8 +64,8 @@ func server() {
 	}
 }
 
-func client() {
-	cl, err := clusterrpc.NewClient("echo1_cl", "127.0.0.1", 9000)
+func client(host string, port uint) {
+	cl, err := clusterrpc.NewClient("echo1_cl", host, port)
 	if err != nil {
 		fmt.Println(err.Error())
 		return
@@ -111,8 +111,8 @@ func client() {
 	}
 }
 
-func aclient() {
-	acl, err := clusterrpc.NewAsyncClient("echo1_acl", "127.0.0.1", 9000, 1)
+func aclient(host string, port uint) {
+	acl, err := clusterrpc.NewAsyncClient("echo1_acl", host, port, 1)
 	if err != nil {
 		fmt.Println(err.Error())
 		return
@@ -140,8 +140,8 @@ func aclient() {
 	time.Sleep(3 * time.Second)
 }
 
-func benchServer() {
-	srv := clusterrpc.NewServer("127.0.0.1", 9000, runtime.GOMAXPROCS(0))
+func benchServer(host string, port uint) {
+	srv := clusterrpc.NewServer(host, port, runtime.GOMAXPROCS(0))
 	srv.SetLoglevel(clusterrpc.LOGLEVEL_ERRORS)
 	srv.RegisterEndpoint("EchoService", "Echo", silentEchoHandler)
 
@@ -152,8 +152,8 @@ func benchServer() {
 	}
 }
 
-func benchClient(n int) {
-	cl, err := clusterrpc.NewClient("echo1_cl", "127.0.0.1", 9000)
+func benchClient(host string, port uint, n int) {
+	cl, err := clusterrpc.NewClient("echo1_cl", host, port)
 	if err != nil {
 		fmt.Println(err.Error())
 		return
@@ -176,10 +176,16 @@ func main() {
 
 	var srv, cl, acl, srvbench bool
 	var clbench int
+	var port uint
+	var host string
+
+	flag.BoolVar(&acl, "acl", false, "Run the asynchronous client")
+	flag.BoolVar(&cl, "cl", false, "Run synchronous client")
+	flag.StringVar(&host, "host", "127.0.0.1", "Remote host (hostname or IP)")
+	flag.UintVar(&port, "port", 9000, "Remote port")
 	flag.BoolVar(&srv, "srv", false, "Run server (localhost:9000)")
 	flag.BoolVar(&srvbench, "srvbench", false, "Run benchmark server (LOGLEVEL_ERRORS, GOMAXPROCS threads, only Echo)")
-	flag.BoolVar(&cl, "cl", false, "Run synchronous client")
-	flag.BoolVar(&acl, "acl", false, "Run the asynchronous client")
+
 	flag.IntVar(&clbench, "clbench", 0, "Run the benchmark client with this number of requests")
 
 	flag.Parse()
@@ -207,15 +213,15 @@ func main() {
 	}
 
 	if srv {
-		server()
+		server(host, port)
 	} else if cl {
-		client()
+		client(host, port)
 	} else if acl {
-		aclient()
+		aclient(host, port)
 	} else if clbench > 0 {
-		benchClient(clbench)
+		benchClient(host, port, clbench)
 	} else if srvbench {
-		benchServer()
+		benchServer(host, port)
 	}
 
 }

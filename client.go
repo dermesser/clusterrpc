@@ -22,7 +22,7 @@ type Client struct {
 
 	name            string
 	raddr           string
-	rport           uint32
+	rport           uint
 	sequence_number uint64
 	timeout         time.Duration
 	// Used for default calls
@@ -39,7 +39,7 @@ timeout of 30 seconds (the network operations will time out after this duration
 and return an error).
 
 */
-func NewClient(client_name, raddr string, rport uint32) (cl *Client, e error) {
+func NewClient(client_name, raddr string, rport uint) (cl *Client, e error) {
 
 	cl = new(Client)
 	cl.logger = log.New(os.Stderr, "clusterrpc.Client: ", log.Lmicroseconds)
@@ -167,6 +167,6 @@ avoid a redirect loop (A redirects to B, B redirects to A)
 The pointer to a client can be nil; otherwise, settings such as timeout, logging output and loglevel
 are copied from it.
 */
-func RequestOneShot(raddr string, rport uint32, service, endpoint string, request_data []byte) ([]byte, error) {
+func RequestOneShot(raddr string, rport uint, service, endpoint string, request_data []byte) ([]byte, error) {
 	return requestOneShot(raddr, rport, service, endpoint, request_data, true, nil)
 }

@@ -37,7 +37,7 @@ func (cl *Client) createChannel() error {
 	return nil
 }
 
-func requestOneShot(raddr string, rport uint32, service, endpoint string, request_data []byte, allow_redirect bool, settings_cl *Client) ([]byte, error) {
+func requestOneShot(raddr string, rport uint, service, endpoint string, request_data []byte, allow_redirect bool, settings_cl *Client) ([]byte, error) {
 	var cl *Client
 	var err error
 
@@ -159,7 +159,7 @@ func (cl *Client) requestInternal(data []byte, service, endpoint string, retries
 		return nil, err
 	} else if respproto.GetResponseStatus() == proto.RPCResponse_STATUS_REDIRECT {
 		if cl.accept_redirect {
-			return requestOneShot(respproto.GetRedirHost(), respproto.GetRedirPort(), service, endpoint, data, false, cl)
+			return requestOneShot(respproto.GetRedirHost(), uint(respproto.GetRedirPort()), service, endpoint, data, false, cl)
 		} else {
 			return nil, errors.New("Could not follow redirect (redirect loop avoidance)")
 		}
