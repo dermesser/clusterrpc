@@ -19,8 +19,12 @@ uncluttered and with only public functions.
 */
 
 /*
-Load balancer using the least used worker: We have a channel of backend identities.
-A backend is queued when it sends a response, and dequeued when we have a client request.
+Load balancer using the least used worker: We have a list (queue) of backend worker identities;
+a backend is queued when it sends a response, and dequeued when it is sent a client request.
+
+Additionally, there's a request queue for the case that there are no workers available at the moment.
+This queue is consulted every time a worker is done with a request, which results in a relatively
+good resource efficiency.
 */
 func (srv *Server) loadbalance() {
 	// List of workers that are free -- list of []byte!
@@ -65,7 +69,7 @@ func (srv *Server) loadbalance() {
 
 					// Try to find worker to send this request to
 					if worker_id := worker_queue.Front(); worker_id != nil {
-						_, err = srv.backend_router.SendMessage(worker_id.Value.([]byte), "", msgs) // [worker identity, "", [client identity, "", RPCRequest]]
+						_, err = srv.backend_router.SendMessage(worker_id.Value.([]byte), "", msgs) // [worker identity, "", client identity, "", RPCRequest]
 						worker_queue.Remove(worker_id)
 
 						if err != nil && srv.loglevel >= LOGLEVEL_ERRORS {
@@ -78,7 +82,7 @@ func (srv *Server) loadbalance() {
 					}
 
 				case srv.backend_router:
-					msgs, err := srv.backend_router.RecvMessageBytes(0) // [client identity, "", RPCResponse]
+					msgs, err := srv.backend_router.RecvMessageBytes(0) // [worker identity, "", client identity, "", RPCResponse]
 
 					if err != nil {
 						if srv.loglevel >= LOGLEVEL_ERRORS {
@@ -97,9 +101,8 @@ func (srv *Server) loadbalance() {
 					worker_queue.PushBack(backend_identity)
 
 					// third frame is MAGIC_READY_STRING when a new worker joins.
-					// Otherwise, send response to client.
-					if string(msgs[2]) != MAGIC_READY_STRING { // if not MAGIC_READY_STRING, it's a RPCResponse protobuf.
-						_, err := srv.frontend_router.SendMessage(msgs[2:])
+					if string(msgs[2]) != MAGIC_READY_STRING { // if not MAGIC_READY_STRING, it's a client identity.
+						_, err := srv.frontend_router.SendMessage(msgs[2:]) // [client identity, "", RPCResponse]
 
 						if err != nil {
 							if srv.loglevel >= LOGLEVEL_ERRORS {
@@ -112,7 +115,7 @@ func (srv *Server) loadbalance() {
 					if todo_queue.Len() > 0 && worker_queue.Len() > 0 {
 						request_message := todo_queue.Remove(todo_queue.Front()).([][]byte)
 						worker_id := worker_queue.Remove(worker_queue.Front()).([]byte)
-						_, err = srv.backend_router.SendMessage(worker_id, "", request_message) // [worker identity, "", [client identity, "", RPCRequest]]
+						_, err = srv.backend_router.SendMessage(worker_id, "", request_message) // [worker identity, "", client identity, "", RPCRequest]
 						if err != nil {
 							if srv.loglevel >= LOGLEVEL_ERRORS {
 								srv.logger.Println("Error when sending to backend router:", err.Error())
@@ -125,7 +128,7 @@ func (srv *Server) loadbalance() {
 	}
 }
 
-// Start a single thread; use "go" if spawn == true. Otherwise, execute in this routine.
+// Start a single thread; spawn a goroutine if spawn == true. Otherwise, execute in the current thread
 func (srv *Server) thread(n int, spawn bool) error {
 	// Yes, we're using a REQ socket for the worker
 	// see http://zguide.zeromq.org/page:all#toc72

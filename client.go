@@ -12,7 +12,8 @@ import (
 
 /*
 Synchronous client. This client can only used in a blocking way. It is thread-safe, but
-blocks on any function call (therefore don't use it if you expect contention)
+locks and blocks on any function call. It is probably important to know that the default
+timeout is 10 seconds, which you might set to another value.
 */
 type Client struct {
 	channel  *zmq.Socket
@@ -107,7 +108,6 @@ server starts processing of the request after the deadline (e.g. because it is l
 long accept() queue, it will respond with a STATUS_TIMEOUT message. The timeout,
 however, doesn't mean that the server will stop the handler after the deadline.
 It is only used for determining if a response is still wanted.
-
 */
 func (cl *Client) SetTimeout(timeout time.Duration) {
 	cl.lock.Lock()
