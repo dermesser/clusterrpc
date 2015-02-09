@@ -176,22 +176,28 @@ func (cl *Client) Close() {
 /*
 Call a remote procedure service.endpoint with data as input.
 
-Returns either a byte slice and nil or an undefined byte slice and a clusterrpc.RequestError.
-You can use RequestError's Status() method to get a status string such as STATUS_NOT_FOUND
+Returns either a byte slice and nil or an undefined byte slice and a clusterrpc.RequestError
+(wrapped in an error interface value, of course). You can use RequestError's Status() method
+to get a status string such as STATUS_NOT_FOUND.
 
-When not being able to get a response after a timeout (and n reattempts, where n is set using
+When not being able to get a response after a timeout (and n reattempts, where n has been set using
 SetRetries()), we return a RequestError where rqerr.Status() == "STATUS_TIMEOUT".
 
-It can be that, if we're connected to multiple peers and one of the peers crashes, every nth request
-(n=number of peers) times out, which makes your application crawl like a snail (although the connection
-is automatically re-established after the netsplit ends or the peer comes up again). If you want to prevent
-that, you can set the number of retries (SetRetries()) to 0, which makes the client return an error on the first
-timeout it encounters (the RequestError.Status() method will return "STATUS_TIMEOUT"). Afterwards, you can
-close this client and create a new client to a (possibly) different set of peers and start sending requests.
+It can be that, if we're connected to multiple peers (NewClientRR()) and one of the peers fails to
+respond, every nth request (n=number of peers) times out, which makes your application work, but
+crawl like a snail (although the connection is automatically re-established after the netsplit
+ends or the peer comes up again). If you want to prevent that, you can set the number of retries
+(SetRetries()) to 0, which makes the client return an error on the first timeout it encounters
+(the RequestError.Status() method will return "STATUS_TIMEOUT"). Afterwards, you can close this
+client and create a new client to a different set of peers and resume your work (especially important
+in latency-critical applications where you can't wait for a timeout every three requests;
+reconnecting is relatively fast)
 
-You could apply this strategy in an environment where you know that your peers crash frequently
-(if you know that peers don't crash frequently, but may take too long, you might want to set a number of retries
-> 0). Creating a Client is relatively cheap (cheaper than timing out on every second request, that is).
+You could apply this strategy in an environment where you know that your peers crash frequently.
+If you know that peers don't crash frequently, but may take too long and respond faster next time
+(next time they're called in the round-robin scheme), you might want to set a number of retries > 0.
+(first request to A fails, retry at B -> success; next request to A -> sucess; next request to
+B -> success etc.)
 
 */
 func (cl *Client) Request(data []byte, service, endpoint string) ([]byte, error) {
