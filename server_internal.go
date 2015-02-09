@@ -90,14 +90,14 @@ func (srv *Server) loadbalance() {
 							srv.logger.Println("Queued request. Current queue length:", todo_queue.Len())
 						}
 					} else {
-						if srv.loglevel >= LOGLEVEL_WARNINGS { // Could not queue, drop
-							srv.logger.Println("Dropped message; no available workers, queue full")
-						}
 						// Maybe just drop silently -- this costs CPU!
 						request := proto.RPCRequest{}
 						err = pb.Unmarshal(msgs[2], &request)
 
 						if err != nil {
+							if srv.loglevel >= LOGLEVEL_WARNINGS { // Could not queue, drop
+								srv.logger.Println("Dropped message; no available workers, queue full")
+							}
 							continue
 						}
 
@@ -110,6 +110,9 @@ func (srv *Server) loadbalance() {
 						respproto, err := pb.Marshal(&response)
 
 						if err != nil {
+							if srv.loglevel >= LOGLEVEL_WARNINGS { // Could not queue, drop
+								srv.logger.Println("Dropped message; no available workers, queue full")
+							}
 							continue
 						}
 
