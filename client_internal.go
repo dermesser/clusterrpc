@@ -151,11 +151,17 @@ func (cl *Client) requestInternal(data []byte, service, endpoint string, retries
 			if cl.loglevel >= LOGLEVEL_ERRORS {
 				cl.logger.Printf("[%s/%d] Timeout occurred, retries failed. Giving up\n", cl.name, rqproto.GetSequenceNumber())
 			}
+			// Create new channel, old one is "confused" (REQ has an FSM internally allowing only req/rep/req/rep...)
+			cl.channel.Close()
+			cl.createChannel()
 			return nil, RequestError{status: proto.RPCResponse_STATUS_TIMEOUT, message: err.Error()}
 		} else {
 			if cl.loglevel >= LOGLEVEL_ERRORS {
-				cl.logger.Printf("[%s/%d] Network error: %s\n", err.Error())
+				cl.logger.Printf("[%s/%d] Network error: %s\n", cl.name, rqproto.GetSequenceNumber(), err.Error())
 			}
+			// Create new channel, old one is "confused" (REQ has an FSM internally allowing only req/rep/req/rep...)
+			cl.channel.Close()
+			cl.createChannel()
 			return nil, RequestError{status: proto.RPCResponse_STATUS_CLIENT_NETWORK_ERROR, message: err.Error()}
 		}
 	}
