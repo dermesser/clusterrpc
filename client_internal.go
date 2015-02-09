@@ -23,6 +23,8 @@ func (cl *Client) createChannel() error {
 		return RequestError{status: proto.RPCResponse_STATUS_CLIENT_NETWORK_ERROR, message: err.Error()}
 	}
 
+	cl.channel.SetIpv6(true)
+
 	for i := range cl.raddr {
 		err = cl.channel.Connect(fmt.Sprintf("tcp://%s:%d", cl.raddr[i], cl.rport[i]))
 

@@ -77,6 +77,8 @@ func NewServer(laddr string, port uint, worker_threads int) (srv *Server) {
 		return nil
 	}
 
+	srv.frontend_router.SetIpv6(true)
+
 	if srv.loglevel >= LOGLEVEL_INFO {
 		srv.logger.Println("Binding frontend to TCP address", fmt.Sprintf("tcp://%s:%d", laddr, port))
 	}
