@@ -22,6 +22,7 @@ Returns one of
 	STATUS_OVERLOADED_RETRY (the server is overloaded and wasn't able to even queue our request. Retry later or elsewhere)
 	STATUS_CLIENT_REQUEST_ERROR (we failed to send or receive the request. Reason could be a Protobuf (de)serialization error, ...)
 	STATUS_CLIENT_NETWORK_ERROR (the socket returned an unrecoverable error)
+	STATUS_CLIENT_CALLED_WRONG (a NewClientRR() call was made with host/port slices differing in length.
 
 The original error message can be retrieved with Message().
 

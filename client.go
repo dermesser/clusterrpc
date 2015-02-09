@@ -40,7 +40,9 @@ Create a new client that connects to the clusterrpc server at raddr:rport.
 The client_name is used for logging purposes. The new client has a default
 timeout of 5 seconds (the network operations will time out after this duration
 and return an error). Typically, a timed out request will be retried twice
-before returning (i.e. the actual timeout is 15 seconds). error is a RequestError object.
+before returning (i.e. the actual timeout is 15 seconds). error is a RequestError object with err.Status()
+being "STATUS_TIMEOUT" in case of a timeout (consolt Status()'s documentation for a list
+of return codes)
 The default total timeout 12 seconds. (3 tries * 4 seconds)
 
 */
@@ -53,9 +55,9 @@ Send requests in a round-robin manner to the given servers. Caveat: If one of th
 it is still queried, resulting in every len(raddrs)'th request timing out initially (but returning a
 response on second try to another peer).
 
-Use this only with stateless services, and only with ones that time out rarely (a reconnect
-to one peer as with a Client returned by NewClient() is cheaper than reconnecting to possibly dozens
-of servers).
+Use this only with fast (so you can set a very low timeout), stateless services (because of round-robin),
+and only with ones that time out (or fail) rarely (a reconnect to one peer as with a Client
+returned by NewClient() is cheaper than reconnecting to possibly dozens of servers).
 
 */
 func NewClientRR(client_name string, raddrs []string, rports []uint, loglevel LOGLEVEL_T) (*Client, error) {
