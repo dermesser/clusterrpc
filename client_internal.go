@@ -56,9 +56,9 @@ func requestOneShot(raddr string, rport uint, service, endpoint string, request_
 	var err error
 
 	if settings_cl != nil {
-		cl, err = NewClient(settings_cl.name+"_tmp", raddr, rport)
+		cl, err = NewClient(settings_cl.name+"_tmp", raddr, rport, settings_cl.loglevel)
 	} else {
-		cl, err = NewClient("anonymous_tmp_client", raddr, rport)
+		cl, err = NewClient("anonymous_tmp_client", raddr, rport, LOGLEVEL_WARNINGS)
 	}
 
 	if err != nil {

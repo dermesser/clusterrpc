@@ -48,12 +48,12 @@ Use the setter functions described below before calling Start(), otherwise they 
 be ignored.
 
 */
-func NewServer(laddr string, port uint, worker_threads int) (srv *Server) {
+func NewServer(laddr string, port uint, worker_threads int, loglevel LOGLEVEL_T) (srv *Server) {
 
 	srv = new(Server)
 	srv.services = make(map[string]*service)
 	srv.logger = log.New(os.Stderr, "clusterrpc.Server: ", log.Lmicroseconds)
-	srv.loglevel = LOGLEVEL_WARNINGS
+	srv.loglevel = loglevel
 	srv.n_threads = worker_threads
 	srv.timeout = time.Second * 30
 

@@ -17,7 +17,9 @@ locks and blocks on any function call. It is probably important to know that the
 timeout is 10 seconds, which you might set to another value.
 */
 type Client struct {
-	channel  *zmq.Socket
+	channel, monitor_sock *zmq.Socket
+	monitor_address       string
+
 	logger   *log.Logger
 	loglevel LOGLEVEL_T
 
@@ -42,11 +44,11 @@ and return an error). Typically, a timed out request will be retried twice
 before returning (i.e. the actual timeout is 15 seconds). error is a RequestError object.
 
 */
-func NewClient(client_name, raddr string, rport uint) (cl *Client, e error) {
-	return NewClientRR(client_name, []string{raddr}, []uint{rport})
+func NewClient(client_name, raddr string, rport uint, loglevel LOGLEVEL_T) (cl *Client, e error) {
+	return NewClientRR(client_name, []string{raddr}, []uint{rport}, loglevel)
 }
 
-func NewClientRR(client_name string, raddrs []string, rports []uint) (*Client, error) {
+func NewClientRR(client_name string, raddrs []string, rports []uint, loglevel LOGLEVEL_T) (*Client, error) {
 	if len(raddrs) != len(rports) {
 		return nil, RequestError{status: proto.RPCResponse_STATUS_CLIENT_CALLED_WRONG, message: "raddrs and rports differ in length"}
 	}
@@ -54,7 +56,7 @@ func NewClientRR(client_name string, raddrs []string, rports []uint) (*Client, e
 	cl.logger = log.New(os.Stderr, "clusterrpc.Client: ", log.Lmicroseconds)
 
 	cl.sequence_number = 0
-	cl.loglevel = LOGLEVEL_WARNINGS
+	cl.loglevel = loglevel
 	cl.name = client_name
 	cl.raddr = raddrs
 	cl.rport = rports
@@ -63,6 +65,10 @@ func NewClientRR(client_name string, raddrs []string, rports []uint) (*Client, e
 	cl.timeout = 5 * time.Second
 
 	err := cl.createChannel()
+
+	if err != nil {
+		return nil, err
+	}
 
 	return cl, err
 }
