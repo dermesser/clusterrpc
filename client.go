@@ -17,8 +17,7 @@ locks and blocks on any function call. It is probably important to know that the
 timeout is 10 seconds, which you might set to another value.
 */
 type Client struct {
-	channel, monitor_sock *zmq.Socket
-	monitor_address       string
+	channel *zmq.Socket
 
 	logger   *log.Logger
 	loglevel LOGLEVEL_T
@@ -62,7 +61,7 @@ func NewClientRR(client_name string, raddrs []string, rports []uint, loglevel LO
 	cl.rport = rports
 	cl.accept_redirect = true
 	cl.eagain_retries = 2
-	cl.timeout = 5 * time.Second
+	cl.timeout = 4 * time.Second // makes 12 seconds as total timeout
 
 	err := cl.createChannel()
 
