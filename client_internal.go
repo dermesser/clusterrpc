@@ -143,12 +143,12 @@ func (cl *Client) requestInternal(data []byte, service, endpoint string, retries
 			cl.lock.Lock()
 
 			if next_err != nil {
-				return nil, next_err
+				return nil, RequestError{status: proto.RPCResponse_STATUS_TIMEOUT, message: err.Error()}
 			} else {
 				return msg, nil
 			}
 
-		} else if 11 == uint32(err.(zmq.Errno)) {
+		} else if 11 == uint32(err.(zmq.Errno)) { // We have no retries left.
 			if cl.loglevel >= LOGLEVEL_ERRORS {
 				cl.logger.Printf("[%s/%d] Timeout occurred, retries failed. Giving up\n", cl.name, rqproto.GetSequenceNumber())
 			}

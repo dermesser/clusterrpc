@@ -32,7 +32,7 @@ type Client struct {
 	default_service, default_endpoint string
 	accept_redirect                   bool
 	lock                              sync.Mutex
-	eagain_retries                    int
+	eagain_retries                    uint
 }
 
 /*
@@ -41,12 +41,23 @@ The client_name is used for logging purposes. The new client has a default
 timeout of 5 seconds (the network operations will time out after this duration
 and return an error). Typically, a timed out request will be retried twice
 before returning (i.e. the actual timeout is 15 seconds). error is a RequestError object.
+The default total timeout 12 seconds. (3 tries * 4 seconds)
 
 */
 func NewClient(client_name, raddr string, rport uint, loglevel LOGLEVEL_T) (cl *Client, e error) {
 	return NewClientRR(client_name, []string{raddr}, []uint{rport}, loglevel)
 }
 
+/*
+Send requests in a round-robin manner to the given servers. Caveat: If one of the peers doesn't respond,
+it is still queried, resulting in every len(raddrs)'th request timing out initially (but returning a
+response on second try to another peer).
+
+Use this only with stateless services, and only with ones that time out rarely (a reconnect
+to one peer as with a Client returned by NewClient() is cheaper than reconnecting to possibly dozens
+of servers).
+
+*/
 func NewClientRR(client_name string, raddrs []string, rports []uint, loglevel LOGLEVEL_T) (*Client, error) {
 	if len(raddrs) != len(rports) {
 		return nil, RequestError{status: proto.RPCResponse_STATUS_CLIENT_CALLED_WRONG, message: "raddrs and rports differ in length"}
@@ -114,6 +125,16 @@ func (cl *Client) SetDefault(service, endpoint string) {
 }
 
 /*
+How often should the client retry after encountering a timeout?
+*/
+func (cl *Client) SetRetries(n uint) {
+	cl.lock.Lock()
+	defer cl.lock.Unlock()
+
+	cl.eagain_retries = n
+}
+
+/*
 Sets the duration in seconds to wait for R/W operations and to use for calculating
 the deadline of a Request.
 
@@ -156,10 +177,23 @@ Call a remote procedure service.endpoint with data as input.
 Returns either a byte slice and nil or an undefined byte slice and a clusterrpc.RequestError.
 You can use RequestError's Status() method to get a status string such as STATUS_NOT_FOUND
 
-Returns nil,nil after a timeout.
+When not being able to get a response after a timeout (and n reattempts, where n is set using
+SetRetries()), we return a RequestError where rqerr.Status() == "STATUS_TIMEOUT".
+
+It can be that, if we're connected to multiple peers and one of the peers crashes, every nth request
+(n=number of peers) times out, which makes your application crawl like a snail (although the connection
+is automatically re-established after the netsplit ends or the peer comes up again). If you want to prevent
+that, you can set the number of retries (SetRetries()) to 0, which makes the client return an error on the first
+timeout it encounters (the RequestError.Status() method will return "STATUS_TIMEOUT"). Afterwards, you can
+close this client and create a new client to a (possibly) different set of peers and start sending requests.
+
+You could apply this strategy in an environment where you know that your peers crash frequently
+(if you know that peers don't crash frequently, but may take too long, you might want to set a number of retries
+> 0). Creating a Client is relatively cheap (cheaper than timing out on every second request, that is).
+
 */
 func (cl *Client) Request(data []byte, service, endpoint string) ([]byte, error) {
-	return cl.requestInternal(data, service, endpoint, cl.eagain_retries)
+	return cl.requestInternal(data, service, endpoint, int(cl.eagain_retries))
 }
 
 /*
