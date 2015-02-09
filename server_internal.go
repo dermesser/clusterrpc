@@ -75,7 +75,11 @@ func (srv *Server) loadbalance() {
 						worker_queue.Remove(worker_id)
 
 						if err != nil && srv.loglevel >= LOGLEVEL_ERRORS {
-							srv.logger.Println("Error when sending to backend router:", err.Error())
+							if err.(zmq.Errno) != zmq.EHOSTUNREACH {
+								srv.logger.Println("Error when sending to backend router:", err.Error())
+							} else {
+								srv.logger.Printf("Could not route message, identity %s, to frontend\n", msgs[0])
+							}
 						}
 					} else if todo_queue.Len() < srv.n_threads*OUTSTANDING_REQUESTS_PER_THREAD { // We're only allowing so many queued requests to prevent from complete overloading
 						todo_queue.PushBack(msgs)
@@ -116,7 +120,13 @@ func (srv *Server) loadbalance() {
 							continue
 						}
 
-						srv.frontend_router.SendMessage(msgs[0:2], respproto)
+						_, err = srv.frontend_router.SendMessage(msgs[0:2], respproto)
+
+						if err != nil {
+							if srv.loglevel >= LOGLEVEL_ERRORS {
+								srv.logger.Printf("Could not route message, identity %s, to frontend\n", msgs[0])
+							}
+						}
 					}
 
 				case srv.backend_router:
@@ -142,9 +152,11 @@ func (srv *Server) loadbalance() {
 					if string(msgs[2]) != MAGIC_READY_STRING { // if not MAGIC_READY_STRING, it's a client identity.
 						_, err := srv.frontend_router.SendMessage(msgs[2:]) // [client identity, "", RPCResponse]
 
-						if err != nil {
-							if srv.loglevel >= LOGLEVEL_ERRORS {
+						if err != nil && srv.loglevel >= LOGLEVEL_WARNINGS {
+							if err.(zmq.Errno) != zmq.EHOSTUNREACH {
 								srv.logger.Println("Error when sending to backend router:", err.Error())
+							} else if err.(zmq.Errno) == zmq.EHOSTUNREACH {
+								srv.logger.Printf("Could not route message, identity %s, to frontend\n", msgs[0])
 							}
 						}
 					}

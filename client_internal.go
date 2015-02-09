@@ -24,6 +24,7 @@ func (cl *Client) createChannel() error {
 	}
 
 	cl.channel.SetIpv6(true)
+	cl.channel.SetReconnectIvl(-1)
 
 	for i := range cl.raddr {
 		err = cl.channel.Connect(fmt.Sprintf("tcp://%s:%d", cl.raddr[i], cl.rport[i]))

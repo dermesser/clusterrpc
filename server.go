@@ -58,7 +58,9 @@ func NewServer(laddr string, port uint, worker_threads int) (srv *Server) {
 	srv.timeout = time.Second * 30
 
 	if worker_threads <= 0 {
-		srv.logger.Println("Number of threads must be 1 or higher")
+		if srv.loglevel >= LOGLEVEL_ERRORS {
+			srv.logger.Println("Number of threads must be 1 or higher")
+		}
 		return nil
 	}
 
@@ -66,18 +68,38 @@ func NewServer(laddr string, port uint, worker_threads int) (srv *Server) {
 	srv.zmq_context, err = zmq.NewContext()
 
 	if err != nil {
-		srv.logger.Println("Error when creating context:", err.Error())
+		if srv.loglevel >= LOGLEVEL_ERRORS {
+			srv.logger.Println("Error when creating context:", err.Error())
+		}
 		return nil
 	}
 
 	srv.frontend_router, err = srv.zmq_context.NewSocket(zmq.ROUTER)
 
 	if err != nil {
-		srv.logger.Println("Error when creating Router socket:", err.Error())
+		if srv.loglevel >= LOGLEVEL_ERRORS {
+			srv.logger.Println("Error when creating Router socket:", err.Error())
+		}
 		return nil
 	}
 
 	srv.frontend_router.SetIpv6(true)
+
+	if err != nil {
+		if srv.loglevel >= LOGLEVEL_WARNINGS {
+			srv.logger.Println("Could not enable IPv6 on frontend router:", err.Error())
+		}
+		return nil
+	}
+
+	srv.frontend_router.SetRouterMandatory(1)
+
+	if err != nil {
+		if srv.loglevel >= LOGLEVEL_WARNINGS {
+			srv.logger.Println("Could not enable mandatory routing on frontend router:", err.Error())
+		}
+		return nil
+	}
 
 	if srv.loglevel >= LOGLEVEL_INFO {
 		srv.logger.Println("Binding frontend to TCP address", fmt.Sprintf("tcp://%s:%d", laddr, port))
@@ -85,14 +107,18 @@ func NewServer(laddr string, port uint, worker_threads int) (srv *Server) {
 	err = srv.frontend_router.Bind(fmt.Sprintf("tcp://%s:%d", laddr, port))
 
 	if err != nil {
-		srv.logger.Println("Error when binding Router socket:", err.Error())
+		if srv.loglevel >= LOGLEVEL_ERRORS {
+			srv.logger.Println("Error when binding Router socket:", err.Error())
+		}
 		return nil
 	}
 
 	srv.backend_router, err = srv.zmq_context.NewSocket(zmq.ROUTER)
 
 	if err != nil {
-		srv.logger.Println("Error when creating backend router socket:", err.Error())
+		if srv.loglevel >= LOGLEVEL_ERRORS {
+			srv.logger.Println("Error when creating backend router socket:", err.Error())
+		}
 		srv = nil
 		return
 	}
@@ -100,10 +126,14 @@ func NewServer(laddr string, port uint, worker_threads int) (srv *Server) {
 	err = srv.backend_router.Bind(BACKEND_ROUTER_PATH)
 
 	if err != nil {
-		srv.logger.Println("Error when binding backend router socket:", err.Error())
+		if srv.loglevel >= LOGLEVEL_ERRORS {
+			srv.logger.Println("Error when binding backend router socket:", err.Error())
+		}
 		srv = nil
 		return
 	}
+
+	srv.backend_router.SetRouterMandatory(1)
 
 	// Sockets are taken from srv
 	go srv.loadbalance()

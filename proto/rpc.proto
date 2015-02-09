@@ -35,6 +35,9 @@ message RPCResponse {
         STATUS_CLIENT_REQUEST_ERROR = 9;
         // We couldn't send the request because of network/socket issues.
         STATUS_CLIENT_NETWORK_ERROR = 10;
+        // Client function called in a wrong way (e.g. different lengt of raddrs
+        // and rports slices to NewClientRR())
+        STATUS_CLIENT_CALLED_WRONG = 11;
     }
 
     optional string redir_host = 2;

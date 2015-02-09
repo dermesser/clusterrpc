@@ -1,6 +1,7 @@
 package clusterrpc
 
 import (
+	"clusterrpc/proto"
 	"io"
 	"log"
 	"os"
@@ -46,6 +47,9 @@ func NewClient(client_name, raddr string, rport uint) (cl *Client, e error) {
 }
 
 func NewClientRR(client_name string, raddrs []string, rports []uint) (*Client, error) {
+	if len(raddrs) != len(rports) {
+		return nil, RequestError{status: proto.RPCResponse_STATUS_CLIENT_CALLED_WRONG, message: "raddrs and rports differ in length"}
+	}
 	cl := new(Client)
 	cl.logger = log.New(os.Stderr, "clusterrpc.Client: ", log.Lmicroseconds)
 
