@@ -14,6 +14,8 @@ import (
 	"flag"
 	"fmt"
 	"runtime"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -155,8 +157,11 @@ func benchServer() {
 	}
 }
 
+var requestcount uint32 = 0
+var waitgroup sync.WaitGroup
+
 func benchClient(n int) {
-	cl, err := clusterrpc.NewClient("echo1_cl", host, port)
+	cl, err := clusterrpc.NewClientRR("echo1_cl", []string{host, host, host}, []uint{port, port + 1, port + 2})
 	if err != nil {
 		fmt.Println(err.Error())
 		return
@@ -164,6 +169,7 @@ func benchClient(n int) {
 	defer cl.Close()
 	cl.SetLoglevel(clusterrpc.LOGLEVEL_ERRORS)
 	cl.SetTimeout(5 * time.Second)
+	waitgroup.Add(1)
 
 	for i := 0; i < n; i++ {
 		_, err := cl.Request([]byte("H"), "EchoService", "Echo")
@@ -171,8 +177,9 @@ func benchClient(n int) {
 		if err != nil {
 			fmt.Println("Client benchmark error:", err.Error())
 		}
+		atomic.AddUint32(&requestcount, 1)
 	}
-
+	waitgroup.Done()
 }
 
 func main() {
@@ -189,7 +196,7 @@ func main() {
 	flag.BoolVar(&srv, "srv", false, "Run server (localhost:9000)")
 	flag.BoolVar(&srvbench, "srvbench", false, "Run benchmark server (LOGLEVEL_ERRORS, GOMAXPROCS threads, only Echo)")
 
-	flag.IntVar(&clbench, "clbench", 0, "Run the benchmark client with this number of requests")
+	flag.IntVar(&clbench, "clbench", 0, "Run the benchmark client; there will be GOMAXPROCS clients running, each sending `clbench` requests.")
 
 	flag.Parse()
 
@@ -222,7 +229,14 @@ func main() {
 	} else if acl {
 		aclient()
 	} else if clbench > 0 {
+		for i := 0; i < runtime.GOMAXPROCS(0)-1; i++ {
+			go benchClient(clbench)
+		}
+
 		benchClient(clbench)
+		waitgroup.Wait()
+		fmt.Println(requestcount)
+
 	} else if srvbench {
 		benchServer()
 	}
