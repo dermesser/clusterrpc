@@ -55,7 +55,7 @@ func NewServer(laddr string, port uint, worker_threads int, loglevel LOGLEVEL_T)
 	srv.logger = log.New(os.Stderr, "clusterrpc.Server: ", log.Lmicroseconds)
 	srv.loglevel = loglevel
 	srv.n_threads = worker_threads
-	srv.timeout = time.Second * 30
+	srv.timeout = time.Second * 3
 
 	if worker_threads <= 0 {
 		if srv.loglevel >= LOGLEVEL_ERRORS {
@@ -93,13 +93,8 @@ func NewServer(laddr string, port uint, worker_threads int, loglevel LOGLEVEL_T)
 	}
 
 	srv.frontend_router.SetRouterMandatory(1)
-
-	if err != nil {
-		if srv.loglevel >= LOGLEVEL_WARNINGS {
-			srv.logger.Println("Could not enable mandatory routing on frontend router:", err.Error())
-		}
-		return nil
-	}
+	srv.frontend_router.SetSndtimeo(srv.timeout)
+	srv.frontend_router.SetRcvtimeo(srv.timeout)
 
 	if srv.loglevel >= LOGLEVEL_INFO {
 		srv.logger.Println("Binding frontend to TCP address", fmt.Sprintf("tcp://%s:%d", laddr, port))
@@ -134,6 +129,8 @@ func NewServer(laddr string, port uint, worker_threads int, loglevel LOGLEVEL_T)
 	}
 
 	srv.backend_router.SetRouterMandatory(1)
+	srv.backend_router.SetRcvtimeo(srv.timeout)
+	srv.backend_router.SetSndtimeo(srv.timeout)
 
 	// Sockets are taken from srv
 	go srv.loadbalance()
@@ -169,6 +166,19 @@ Set logger.
 */
 func (srv *Server) SetLogger(l *log.Logger) {
 	srv.logger = l
+}
+
+/*
+Set timeout for the routers used by the loadbalancer (the worker sockets don't really need a timeout
+because they're communicating via inproc://)
+*/
+func (srv *Server) SetTimeout(d time.Duration) {
+	srv.timeout = d
+
+	srv.backend_router.SetRcvtimeo(srv.timeout)
+	srv.backend_router.SetSndtimeo(srv.timeout)
+	srv.frontend_router.SetSndtimeo(srv.timeout)
+	srv.frontend_router.SetRcvtimeo(srv.timeout)
 }
 
 /*

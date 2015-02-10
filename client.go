@@ -181,23 +181,19 @@ Returns either a byte slice and nil or an undefined byte slice and a clusterrpc.
 to get a status string such as STATUS_NOT_FOUND.
 
 When not being able to get a response after a timeout (and n reattempts, where n has been set using
-SetRetries()), we return a RequestError where rqerr.Status() == "STATUS_TIMEOUT".
+SetRetries()), we return a RequestError where rqerr.Status() == "STATUS_TIMEOUT". This is probably
+due to a completely overloaded server, a crashed server or a netsplit.
 
-It can be that, if we're connected to multiple peers (NewClientRR()) and one of the peers fails to
-respond, every nth request (n=number of peers) times out, which makes your application work, but
-crawl like a snail (although the connection is automatically re-established after the netsplit
-ends or the peer comes up again). If you want to prevent that, you can set the number of retries
-(SetRetries()) to 0, which makes the client return an error on the first timeout it encounters
-(the RequestError.Status() method will return "STATUS_TIMEOUT"). Afterwards, you can close this
-client and create a new client to a different set of peers and resume your work (especially important
-in latency-critical applications where you can't wait for a timeout every three requests;
-reconnecting is relatively fast)
+There's something to pay attention to when dealing with multiple servers (NewClientRR()); if one server
+becomes unresponsive (i.e. the attempt to receive a response timed out), the client makes another attempt
+at the next server of the set. The unresponsive server is taken out of the set; in theory, the client
+should try to reconnect to the unresponsive server (this was unfortunately not yet observed in practice).
 
-You could apply this strategy in an environment where you know that your peers crash frequently.
-If you know that peers don't crash frequently, but may take too long and respond faster next time
-(next time they're called in the round-robin scheme), you might want to set a number of retries > 0.
-(first request to A fails, retry at B -> success; next request to A -> sucess; next request to
-B -> success etc.)
+With this setup, once you start getting STATUS_TIMEOUT errors from Request(), you know that none
+of the servers you have specified is responding anymore, and you probably want to reconnect
+to another set of servers. Another possible caveat is that a single hot client can put too much
+load on a server if the client's request load is so high that it only can be managed using the rotation
+between multiple servers. If possible, avoid such clients.
 
 */
 func (cl *Client) Request(data []byte, service, endpoint string) ([]byte, error) {

@@ -47,6 +47,8 @@ func (cl *Client) createChannel() error {
 
 	cl.channel.SetSndtimeo(cl.timeout)
 	cl.channel.SetRcvtimeo(cl.timeout)
+	cl.channel.SetReqCorrelate(1)
+	cl.channel.SetReqRelaxed(1)
 
 	return nil
 }
@@ -117,7 +119,11 @@ func (cl *Client) requestInternal(data []byte, service, endpoint string, retries
 		if cl.loglevel >= LOGLEVEL_ERRORS {
 			cl.logger.Printf("[%s/%d] Could not send message to %s. Error: %s\n", cl.name, rqproto.GetSequenceNumber(), service+"."+endpoint, err.Error())
 		}
-		return nil, RequestError{status: proto.RPCResponse_STATUS_CLIENT_NETWORK_ERROR, message: err.Error()}
+		if err.(zmq.Errno) == 11 { // EAGAIN
+			return nil, RequestError{status: proto.RPCResponse_STATUS_TIMEOUT, message: err.Error()}
+		} else {
+			return nil, RequestError{status: proto.RPCResponse_STATUS_CLIENT_NETWORK_ERROR, message: err.Error()}
+		}
 	} else {
 		if cl.loglevel >= LOGLEVEL_DEBUG {
 			cl.logger.Printf("[%s/%d] Sent request to %s\n", cl.name, rqproto.GetSequenceNumber(), service+"."+endpoint)
@@ -135,9 +141,7 @@ func (cl *Client) requestInternal(data []byte, service, endpoint string, retries
 				cl.logger.Printf("[%s/%d] Timeout occurred (EAGAIN); retrying\n", cl.name, rqproto.GetSequenceNumber())
 			}
 
-			// Create new channel, old one is "confused" (REQ has an FSM internally allowing only req/rep/req/rep...)
-			cl.channel.Close()
-			cl.createChannel()
+			// Do next request; timed-out socket will be disconnected and possibly reconnected
 			cl.lock.Unlock()
 			msg, next_err := cl.requestInternal(data, service, endpoint, retries_left-1)
 			cl.lock.Lock()
@@ -152,9 +156,6 @@ func (cl *Client) requestInternal(data []byte, service, endpoint string, retries
 			if cl.loglevel >= LOGLEVEL_ERRORS {
 				cl.logger.Printf("[%s/%d] Timeout occurred, retries failed. Giving up\n", cl.name, rqproto.GetSequenceNumber())
 			}
-			// Create new channel, old one is "confused" (REQ has an FSM internally allowing only req/rep/req/rep...)
-			cl.channel.Close()
-			cl.createChannel()
 			return nil, RequestError{status: proto.RPCResponse_STATUS_TIMEOUT, message: err.Error()}
 		} else {
 			if cl.loglevel >= LOGLEVEL_ERRORS {
