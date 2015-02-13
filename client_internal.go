@@ -97,7 +97,7 @@ func (cl *Client) requestInternal(data []byte, service, endpoint string, retries
 
 	rqproto.Srvc = pb.String(service)
 	rqproto.Procedure = pb.String(endpoint)
-	rqproto.Data = pb.String(string(data))
+	rqproto.Data = data
 	rqproto.CallerId = pb.String(cl.name)
 
 	if cl.timeout > 0 {

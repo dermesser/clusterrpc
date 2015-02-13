@@ -78,7 +78,7 @@ func (cx *Context) toRPCResponse() proto.RPCResponse {
 		rpproto.ErrorMessage = pb.String(cx.errorMessage)
 	}
 
-	rpproto.ResponseData = pb.String(string(cx.result))
+	rpproto.ResponseData = cx.result
 
 	if cx.redirected {
 		rpproto.RedirHost = pb.String(cx.redir_host)

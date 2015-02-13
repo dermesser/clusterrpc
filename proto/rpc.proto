@@ -4,7 +4,7 @@ message RPCRequest {
     required uint64 sequence_number = 1;
     required string srvc = 2;
     required string procedure = 3;
-    required string data = 4;
+    required bytes data = 4;
     optional int64 deadline = 5; // UNIX timestamp after which we don't want to have an answer anymore
     optional string caller_id = 6;
 }
@@ -45,7 +45,7 @@ message RPCResponse {
     optional string redir_service = 4;
     optional string redir_endpoint = 5;
 
-    optional string response_data = 6;
+    optional bytes response_data = 6;
 
     required Status response_status = 7;
     optional string error_message = 8;

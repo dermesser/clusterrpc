@@ -304,7 +304,7 @@ func (srv *Server) handleRequest(request *workerRequest, sock *zmq.Socket) {
 			if srv.loglevel >= LOGLEVEL_DEBUG {
 				srv.logger.Printf("[%x/%s/%d] Calling endpoint %s.%s...\n", request.client_id, caller_id, rqproto.GetSequenceNumber(), rqproto.GetSrvc(), rqproto.GetProcedure())
 			}
-			cx := newContext([]byte(rqproto.GetData()))
+			cx := newContext(rqproto.GetData())
 			handler(cx)
 
 			rpproto := cx.toRPCResponse()
