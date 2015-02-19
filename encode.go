@@ -10,7 +10,7 @@ import (
 	"errors"
 	"io"
 
-	pb "code.google.com/p/goprotobuf/proto"
+	pb "github.com/golang/protobuf/proto"
 )
 
 // Converts a number to a little-endian byte array, a so-called Sizebuf

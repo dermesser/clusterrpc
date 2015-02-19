@@ -3,7 +3,7 @@ package clusterrpc
 import (
 	"clusterrpc/proto"
 
-	pb "code.google.com/p/goprotobuf/proto"
+	pb "github.com/golang/protobuf/proto"
 )
 
 /*

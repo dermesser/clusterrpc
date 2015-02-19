@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	pb "code.google.com/p/goprotobuf/proto"
+	pb "github.com/golang/protobuf/proto"
 	zmq "github.com/pebbe/zmq4"
 )
 
