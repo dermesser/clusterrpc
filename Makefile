@@ -2,6 +2,9 @@
 build: protos
 	go build
 
+install: protos
+	go install
+
 test:
 	go test
 
