@@ -51,9 +51,9 @@ func NewClient(client_name, raddr string, rport uint, loglevel LOGLEVEL_T) (cl *
 }
 
 /*
-Send requests in a round-robin manner to the given servers. Caveat: If one of the peers doesn't respond,
-it is still queried, resulting in every len(raddrs)'th request timing out initially (but returning a
-response on second try to another peer).
+Send requests in a round-robin manner to the given servers. If one of the servers doesn't respond,
+it is taken out of the set that of servers that is queried. It is recommended to re-connect the client
+regularly to prevent overloading one server.
 
 Use this only with fast (so you can set a very low timeout), stateless services (because of round-robin),
 and only with ones that time out (or fail) rarely (a reconnect to one peer as with a Client
