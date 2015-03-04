@@ -1,6 +1,7 @@
 package clusterrpc
 
 import (
+	"bytes"
 	"clusterrpc/proto"
 	"container/list"
 	"fmt"
@@ -11,7 +12,9 @@ import (
 )
 
 const BACKEND_ROUTER_PATH string = "inproc://rpc_backend_router"
-const MAGIC_READY_STRING string = "___//READY\\___"
+
+var MAGIC_READY_STRING []byte = []byte("___ReAdY___")
+
 const OUTSTANDING_REQUESTS_PER_THREAD int = 50
 
 type workerRequest struct {
@@ -156,7 +159,7 @@ func (srv *Server) loadbalance() {
 					worker_queue.PushBack(backend_identity)
 
 					// third frame is MAGIC_READY_STRING when a new worker joins.
-					if string(msgs[5]) != MAGIC_READY_STRING { // if not MAGIC_READY_STRING, it's an RPCResponse.
+					if bytes.Equal(msgs[5], MAGIC_READY_STRING) { // if not MAGIC_READY_STRING, it's an RPCResponse.
 						_, err := srv.frontend_router.SendMessage(msgs[2:]) // [client identity, request_id, "", RPCResponse]
 
 						if err != nil && srv.loglevel >= LOGLEVEL_WARNINGS {
@@ -185,7 +188,8 @@ func (srv *Server) loadbalance() {
 	}
 }
 
-// Start a single thread; spawn a goroutine if spawn == true. Otherwise, execute in the current thread
+// Start a single worker thread; spawn a goroutine if spawn == true. Otherwise, execute in the current thread.
+// This thread will later execute the registered handlers.
 func (srv *Server) thread(n int, spawn bool) error {
 	// Yes, we're using a REQ socket for the worker
 	// see http://zguide.zeromq.org/page:all#toc72

@@ -30,10 +30,10 @@ type Server struct {
 /*
 Type of a function that is called when the corresponding endpoint is requested.
 */
-type Endpoint (func(*Context))
+type Handler (func(*Context))
 
 type service struct {
-	endpoints map[string]Endpoint
+	endpoints map[string]Handler
 }
 
 /*
@@ -99,6 +99,7 @@ func NewServer(laddr string, port uint, worker_threads int, loglevel LOGLEVEL_T)
 	if srv.loglevel >= LOGLEVEL_INFO {
 		srv.logger.Println("Binding frontend to TCP address", fmt.Sprintf("tcp://%s:%d", laddr, port))
 	}
+
 	err = srv.frontend_router.Bind(fmt.Sprintf("tcp://%s:%d", laddr, port))
 
 	if err != nil {
@@ -139,7 +140,7 @@ func NewServer(laddr string, port uint, worker_threads int, loglevel LOGLEVEL_T)
 }
 
 /*
-Starts message-accepting threads. Returns an error if any thread couldn't set up its socket,
+Starts worker threads. Returns an error if any thread couldn't set up its socket,
 otherwise nil. The error is logged at any LOGLEVEL.
 */
 func (srv *Server) Start() error {
@@ -209,12 +210,12 @@ is created implicitly
 
 err is not nil if the endpoint is already registered.
 */
-func (srv *Server) RegisterEndpoint(svc, endpoint string, handler Endpoint) (err error) {
+func (srv *Server) RegisterHandler(svc, endpoint string, handler Handler) (err error) {
 	_, ok := srv.services[svc]
 
 	if !ok {
 		srv.services[svc] = new(service)
-		srv.services[svc].endpoints = make(map[string]Endpoint)
+		srv.services[svc].endpoints = make(map[string]Handler)
 	} else if _, ok = srv.services[svc].endpoints[endpoint]; ok {
 		if srv.loglevel >= LOGLEVEL_WARNINGS {
 			srv.logger.Println("Trying to register existing endpoint:", svc+"."+endpoint)
@@ -236,7 +237,7 @@ Removes an endpoint from the set of served endpoints.
 
 Returns an error value with a description if the endpoint doesn't exist.
 */
-func (srv *Server) UnregisterEndpoint(svc, endpoint string) (err error) {
+func (srv *Server) UnregisterHandler(svc, endpoint string) (err error) {
 
 	err = nil
 	_, ok := srv.services[svc]

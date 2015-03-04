@@ -202,5 +202,5 @@ func (cl *Client) requestInternal(data []byte, service, endpoint string, retries
 		}
 	}
 
-	return []byte(respproto.GetResponseData()), nil
+	return respproto.GetResponseData(), nil
 }
