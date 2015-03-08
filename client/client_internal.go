@@ -17,7 +17,7 @@ func (cl *Client) createChannel() error {
 	}
 
 	var err error
-	cl.channel, err = zmq.NewSocket(zmq.REQ)
+	cl.channel, err = zmq.NewSocket(zmq.DEALER)
 
 	if err != nil {
 		cl.logger.Println("Error when creating Req socket:", err.Error())
@@ -48,8 +48,6 @@ func (cl *Client) createChannel() error {
 
 	cl.channel.SetSndtimeo(cl.timeout)
 	cl.channel.SetRcvtimeo(cl.timeout)
-	cl.channel.SetReqCorrelate(1)
-	cl.channel.SetReqRelaxed(1)
 
 	return nil
 }

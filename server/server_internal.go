@@ -19,7 +19,7 @@ var MAGIC_READY_STRING []byte = []byte("___ReAdY___")
 const OUTSTANDING_REQUESTS_PER_THREAD int = 50
 
 type workerRequest struct {
-	request_id, client_id, data []byte
+	client_id, data []byte
 }
 
 /*
@@ -61,9 +61,7 @@ func (srv *Server) loadbalance() {
 			for _, sock := range polled {
 				switch s := sock.Socket; s {
 				case srv.frontend_router:
-					// The message we're receiving here has this format: [client_identity, request_id, "", data].
-					// request_id is a kind of sequence number and is sent because we set ZMQ_REQ_CORRELATE. client_identity
-					// is added by the router.
+					// The message we're receiving here has this format: [client_identity, data].
 					msgs, err := srv.frontend_router.RecvMessageBytes(0)
 
 					if err != nil {
@@ -72,17 +70,17 @@ func (srv *Server) loadbalance() {
 							continue
 						}
 					}
-					if len(msgs) < 3 {
+					if len(msgs) != 2 {
 						if srv.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
 							srv.logger.Println(
-								"Error: Skipping message with less than 3 frames from frontend router;", len(msgs), "frames received")
+								"Error: Skipping message with other than 2 frames from frontend router;", len(msgs), "frames received")
 						}
 						continue
 					}
 
 					// Try to find worker to send this request to
 					if worker_id := worker_queue.Front(); worker_id != nil {
-						_, err = srv.backend_router.SendMessage(worker_id.Value.([]byte), "", msgs) // [worker identity, "", client identity, request_id, "", RPCRequest]
+						_, err = srv.backend_router.SendMessage(worker_id.Value.([]byte), "", msgs) // [worker identity, "", client identity, RPCRequest]
 						worker_queue.Remove(worker_id)
 
 						if err != nil && srv.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
@@ -107,7 +105,7 @@ func (srv *Server) loadbalance() {
 					} else {
 						// Maybe just drop silently -- this costs CPU!
 						request := proto.RPCRequest{}
-						err = pb.Unmarshal(msgs[2], &request)
+						err = pb.Unmarshal(msgs[1], &request)
 
 						if err != nil {
 							if srv.loglevel >= clusterrpc.LOGLEVEL_WARNINGS { // Could not queue, drop
@@ -131,7 +129,7 @@ func (srv *Server) loadbalance() {
 							continue
 						}
 
-						_, err = srv.frontend_router.SendMessage(msgs[0:2], respproto)
+						_, err = srv.frontend_router.SendMessage(msgs[0], respproto)
 
 						if err != nil {
 							if srv.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
@@ -141,7 +139,7 @@ func (srv *Server) loadbalance() {
 					}
 
 				case srv.backend_router:
-					msgs, err := srv.backend_router.RecvMessageBytes(0) // 6 frames: [worker identity, "", client identity, request_id, "", RPCResponse]
+					msgs, err := srv.backend_router.RecvMessageBytes(0) // 4 frames: [worker identity, "", client identity, RPCResponse]
 
 					if err != nil {
 						if srv.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
@@ -149,9 +147,9 @@ func (srv *Server) loadbalance() {
 							continue
 						}
 					}
-					if len(msgs) < 6 { // We're expecting 6 frames, no less.
+					if len(msgs) != 4 { // We're expecting 4 frames, no less.
 						if srv.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
-							srv.logger.Println("Error: Skipping message with less than 6 frames from backend;", len(msgs), "frames received")
+							srv.logger.Println("Error: Skipping message with other than 4 frames from backend;", len(msgs), "frames received")
 						}
 						continue
 					}
@@ -160,14 +158,14 @@ func (srv *Server) loadbalance() {
 					worker_queue.PushBack(backend_identity)
 
 					// third frame is MAGIC_READY_STRING when a new worker joins.
-					if !bytes.Equal(msgs[5], MAGIC_READY_STRING) { // if not MAGIC_READY_STRING, it's an RPCResponse.
-						_, err := srv.frontend_router.SendMessage(msgs[2:]) // [client identity, request_id, "", RPCResponse]
+					if !bytes.Equal(msgs[3], MAGIC_READY_STRING) { // if not MAGIC_READY_STRING, it's an RPCResponse.
+						_, err := srv.frontend_router.SendMessage(msgs[2:]) // [client identity, RPCResponse]
 
 						if err != nil && srv.loglevel >= clusterrpc.LOGLEVEL_WARNINGS {
 							if err.(zmq.Errno) != zmq.EHOSTUNREACH {
 								srv.logger.Println("Error when sending to backend router:", err.Error())
 							} else if err.(zmq.Errno) == zmq.EHOSTUNREACH { // routing is mandatory
-								srv.logger.Printf("Could not route message, identity %s, to frontend\n", msgs[0])
+								srv.logger.Printf("Could not route message, worker identity %s, to frontend\n", msgs[0])
 							}
 						}
 					}
@@ -234,23 +232,23 @@ func (srv *Server) thread(n int, spawn bool) error {
 func (srv *Server) acceptRequests(sock *zmq.Socket, worker_identity string) error {
 
 	// Send bogus parts so we have the correct number of frames in this message. (doesn't impact performance)
-	sock.SendMessage("___BOGUS_CLIENT_ID", "___BOGUS_REQUEST_ID", "", MAGIC_READY_STRING)
+	sock.SendMessage("___BOGUS_CLIENT_ID", MAGIC_READY_STRING)
 	for {
-		// We're getting here the following message parts: [client_identity, request_id, "", data]
+		// We're getting here the following message parts: [client_identity, data]
 		msgs, err := sock.RecvMessageBytes(0)
 
-		if err == nil && len(msgs) >= 4 {
+		if err == nil && len(msgs) == 2 {
 			if srv.loglevel >= clusterrpc.LOGLEVEL_DEBUG {
 				srv.logger.Printf("Worker #%s received message from %x\n", worker_identity, msgs[0])
 			}
-			req := workerRequest{client_id: msgs[0], request_id: msgs[1], data: msgs[3]}
+			req := workerRequest{client_id: msgs[0], data: msgs[1]}
 			srv.handleRequest(&req, sock)
 		} else {
 			if srv.loglevel >= clusterrpc.LOGLEVEL_WARNINGS {
 				if err != nil {
 					srv.logger.Println("Skipped incoming message, error:", err.Error())
-				} else if len(msgs) < 4 {
-					srv.logger.Println("Frontend router gave message with less than 3 frames")
+				} else if len(msgs) != 2 {
+					srv.logger.Println("Frontend router gave message with != 2 frames")
 				}
 			}
 			continue
@@ -310,6 +308,8 @@ func (srv *Server) handleRequest(request *workerRequest, sock *zmq.Socket) {
 				srv.logger.Printf("[%x/%s/%d] Calling endpoint %s.%s...\n", request.client_id, caller_id, rqproto.GetSequenceNumber(), rqproto.GetSrvc(), rqproto.GetProcedure())
 			}
 			cx := newContext(rqproto.GetData())
+
+			// Actual invocation!!
 			handler(cx)
 
 			rpproto := cx.toRPCResponse()
@@ -325,7 +325,7 @@ func (srv *Server) handleRequest(request *workerRequest, sock *zmq.Socket) {
 				}
 			} else {
 
-				_, err := sock.SendMessage(request.client_id, request.request_id, "", response_serialized)
+				_, err := sock.SendMessage(request.client_id, response_serialized)
 
 				if err != nil {
 					if srv.loglevel >= clusterrpc.LOGLEVEL_WARNINGS {
@@ -356,5 +356,5 @@ func (srv *Server) sendError(sock *zmq.Socket, rq proto.RPCRequest, s proto.RPCR
 		return // Let the client time out. We can't do anything (although this isn't supposed to happen)
 	}
 
-	sock.SendMessage(request.client_id, request.request_id, "", buf)
+	sock.SendMessage(request.client_id, buf)
 }
