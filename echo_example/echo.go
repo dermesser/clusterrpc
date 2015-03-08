@@ -163,7 +163,7 @@ var requestcount uint32 = 0
 var waitgroup sync.WaitGroup
 
 func benchClient(n int) {
-	cl, err := clusterrpc.NewClient("echo1_cl", host, port, clusterrpc.LOGLEVEL_WARNINGS)
+	cl, err := client.NewClient("echo1_cl", host, port, clusterrpc.LOGLEVEL_WARNINGS)
 	if err != nil {
 		fmt.Println(err.Error())
 		return
