@@ -164,7 +164,9 @@ func (srv *Server) loadbalance() {
 						if err != nil && srv.loglevel >= clusterrpc.LOGLEVEL_WARNINGS {
 							if err.(zmq.Errno) != zmq.EHOSTUNREACH {
 								srv.logger.Println("Error when sending to backend router:", err.Error())
-							} else if err.(zmq.Errno) == zmq.EHOSTUNREACH { // routing is mandatory
+							} else if err.(zmq.Errno) == zmq.EHOSTUNREACH {
+								// routing is mandatory.
+								// Fails when the client has already disconnected
 								srv.logger.Printf("Could not route message, worker identity %s, to frontend\n", msgs[0])
 							}
 						}

@@ -134,7 +134,6 @@ func NewServer(laddr string, port uint, worker_threads int, loglevel clusterrpc.
 	srv.backend_router.SetRcvtimeo(srv.timeout)
 	srv.backend_router.SetSndtimeo(srv.timeout)
 
-	// Sockets are taken from srv
 	go srv.loadbalance()
 
 	return
