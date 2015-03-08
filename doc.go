@@ -23,9 +23,10 @@ https://docs.google.com/drawings/d/1rERuS_D-5gAr8ImQ4kTPrDeZoEmOHNnG-WCSiLI5kUw/
 As of 25fe4b5, one client and one server both running on one processor (GOMAXPROCS=1;
 Intel(R) Core(TM) i5 CPU       M 460  @ 2.53GHz) via localhost were capable of supporting between 5350
 requests per second (with 35 bytes of payload) and 6850 requests per second (1 byte payload). This is
-not good, but also not bad, given the relatively complex routing and load balancing structure.
+not good, but also not bad, given the relatively complex routing and load balancing structure (which
+supports stability and scalability, also in the face of more complex workloads).
 The server scales with the number of processes (client and server with both GOMAXPROCS=2 reached 7900 RPS,
-10500 RPS with server's GOMAXPROCS=4)
+10500 RPS with server's GOMAXPROCS=4). If client and server run both with 12 processes, 21400 QPS were achieved.
 
 When trying to find a good number of threads, keep in mind that one server process runs at least
 three threads: One ZeroMQ networking thread (capable of roughly 1 GB/s, according to ZeroMQ documentation),
