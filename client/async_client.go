@@ -1,6 +1,7 @@
-package clusterrpc
+package client
 
 import (
+	"clusterrpc"
 	"io"
 	"log"
 	"os"
@@ -22,7 +23,7 @@ type AsyncClient struct {
 	qlength       uint
 
 	logger   *log.Logger
-	loglevel LOGLEVEL_T
+	loglevel clusterrpc.LOGLEVEL_T
 	client   *Client
 }
 
@@ -36,7 +37,7 @@ higher parallelism can simply be achieved by using multiple AsyncClients.
 client_name is an arbitrary name that can be used to identify this client at the server (e.g.
 in logs)
 */
-func NewAsyncClient(client_name, raddr string, rport, queue_length uint, loglevel LOGLEVEL_T) (*AsyncClient, error) {
+func NewAsyncClient(client_name, raddr string, rport, queue_length uint, loglevel clusterrpc.LOGLEVEL_T) (*AsyncClient, error) {
 
 	cl := new(AsyncClient)
 	cl.logger = log.New(os.Stderr, "clusterrpc.AsyncClient "+client_name+": ", log.Lmicroseconds)
@@ -75,7 +76,7 @@ func (cl *AsyncClient) SetLogger(l *log.Logger) {
 /*
 Define which errors/situations to log
 */
-func (cl *AsyncClient) SetLoglevel(ll LOGLEVEL_T) {
+func (cl *AsyncClient) SetLoglevel(ll clusterrpc.LOGLEVEL_T) {
 	cl.loglevel = ll
 	cl.client.loglevel = ll
 }
@@ -99,7 +100,7 @@ func (cl *AsyncClient) startThread() {
 			return
 		}
 
-		if cl.loglevel >= LOGLEVEL_WARNINGS && float64(len(cl.request_queue)) > 0.7*float64(cl.qlength) {
+		if cl.loglevel >= clusterrpc.LOGLEVEL_WARNINGS && float64(len(cl.request_queue)) > 0.7*float64(cl.qlength) {
 			cl.logger.Println("AsyncClient", cl.client.name, "Warning: Queue is fuller than 70% of its capacity!")
 		}
 

@@ -1,7 +1,8 @@
-package clusterrpc
+package server
 
 import (
 	"bytes"
+	"clusterrpc"
 	"clusterrpc/proto"
 	"container/list"
 	"fmt"
@@ -52,7 +53,7 @@ func (srv *Server) loadbalance() {
 		polled, err := poller.Poll(-1)
 
 		if err != nil {
-			if srv.loglevel >= LOGLEVEL_ERRORS {
+			if srv.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
 				srv.logger.Println("Polling error in loadbalancer:", err.Error())
 			}
 			continue
@@ -66,13 +67,13 @@ func (srv *Server) loadbalance() {
 					msgs, err := srv.frontend_router.RecvMessageBytes(0)
 
 					if err != nil {
-						if srv.loglevel >= LOGLEVEL_ERRORS {
+						if srv.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
 							srv.logger.Println("Error when receiving from frontend:", err.Error())
 							continue
 						}
 					}
 					if len(msgs) < 3 {
-						if srv.loglevel >= LOGLEVEL_ERRORS {
+						if srv.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
 							srv.logger.Println(
 								"Error: Skipping message with less than 3 frames from frontend router;", len(msgs), "frames received")
 						}
@@ -84,7 +85,7 @@ func (srv *Server) loadbalance() {
 						_, err = srv.backend_router.SendMessage(worker_id.Value.([]byte), "", msgs) // [worker identity, "", client identity, request_id, "", RPCRequest]
 						worker_queue.Remove(worker_id)
 
-						if err != nil && srv.loglevel >= LOGLEVEL_ERRORS {
+						if err != nil && srv.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
 							if err.(zmq.Errno) != zmq.EHOSTUNREACH {
 								srv.logger.Println("Error when sending to backend router:", err.Error())
 							} else {
@@ -94,13 +95,13 @@ func (srv *Server) loadbalance() {
 					} else if todo_queue.Len() < srv.n_threads*OUTSTANDING_REQUESTS_PER_THREAD { // We're only allowing so many queued requests to prevent from complete overloading
 						todo_queue.PushBack(msgs)
 
-						if srv.loglevel >= LOGLEVEL_WARNINGS &&
+						if srv.loglevel >= clusterrpc.LOGLEVEL_WARNINGS &&
 							todo_queue.Len() > int(0.8*float64(srv.n_threads*OUTSTANDING_REQUESTS_PER_THREAD)) {
 
 							srv.logger.Printf("Queue is now at more than 80% fullness. Consider increasing # of workers (%d/%d)",
 								todo_queue.Len(), srv.n_threads*OUTSTANDING_REQUESTS_PER_THREAD)
 
-						} else if srv.loglevel >= LOGLEVEL_DEBUG {
+						} else if srv.loglevel >= clusterrpc.LOGLEVEL_DEBUG {
 							srv.logger.Println("Queued request. Current queue length:", todo_queue.Len())
 						}
 					} else {
@@ -109,7 +110,7 @@ func (srv *Server) loadbalance() {
 						err = pb.Unmarshal(msgs[2], &request)
 
 						if err != nil {
-							if srv.loglevel >= LOGLEVEL_WARNINGS { // Could not queue, drop
+							if srv.loglevel >= clusterrpc.LOGLEVEL_WARNINGS { // Could not queue, drop
 								srv.logger.Println("Dropped message; no available workers, queue full")
 							}
 							continue
@@ -124,7 +125,7 @@ func (srv *Server) loadbalance() {
 						respproto, err := pb.Marshal(&response)
 
 						if err != nil {
-							if srv.loglevel >= LOGLEVEL_WARNINGS { // Could not queue, drop
+							if srv.loglevel >= clusterrpc.LOGLEVEL_WARNINGS { // Could not queue, drop
 								srv.logger.Println("Dropped message; no available workers, queue full")
 							}
 							continue
@@ -133,7 +134,7 @@ func (srv *Server) loadbalance() {
 						_, err = srv.frontend_router.SendMessage(msgs[0:2], respproto)
 
 						if err != nil {
-							if srv.loglevel >= LOGLEVEL_ERRORS {
+							if srv.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
 								srv.logger.Printf("Could not route message, identity %s, to frontend\n", msgs[0])
 							}
 						}
@@ -143,13 +144,13 @@ func (srv *Server) loadbalance() {
 					msgs, err := srv.backend_router.RecvMessageBytes(0) // 6 frames: [worker identity, "", client identity, request_id, "", RPCResponse]
 
 					if err != nil {
-						if srv.loglevel >= LOGLEVEL_ERRORS {
+						if srv.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
 							srv.logger.Println("Error when receiving from frontend:", err.Error())
 							continue
 						}
 					}
 					if len(msgs) < 6 { // We're expecting 6 frames, no less.
-						if srv.loglevel >= LOGLEVEL_ERRORS {
+						if srv.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
 							srv.logger.Println("Error: Skipping message with less than 6 frames from backend;", len(msgs), "frames received")
 						}
 						continue
@@ -159,10 +160,10 @@ func (srv *Server) loadbalance() {
 					worker_queue.PushBack(backend_identity)
 
 					// third frame is MAGIC_READY_STRING when a new worker joins.
-					if bytes.Equal(msgs[5], MAGIC_READY_STRING) { // if not MAGIC_READY_STRING, it's an RPCResponse.
+					if !bytes.Equal(msgs[5], MAGIC_READY_STRING) { // if not MAGIC_READY_STRING, it's an RPCResponse.
 						_, err := srv.frontend_router.SendMessage(msgs[2:]) // [client identity, request_id, "", RPCResponse]
 
-						if err != nil && srv.loglevel >= LOGLEVEL_WARNINGS {
+						if err != nil && srv.loglevel >= clusterrpc.LOGLEVEL_WARNINGS {
 							if err.(zmq.Errno) != zmq.EHOSTUNREACH {
 								srv.logger.Println("Error when sending to backend router:", err.Error())
 							} else if err.(zmq.Errno) == zmq.EHOSTUNREACH { // routing is mandatory
@@ -177,7 +178,7 @@ func (srv *Server) loadbalance() {
 						worker_id := worker_queue.Remove(worker_queue.Front()).([]byte)
 						_, err = srv.backend_router.SendMessage(worker_id, "", request_message) // [worker identity, "", client identity, request_id, "", RPCRequest]
 						if err != nil {
-							if srv.loglevel >= LOGLEVEL_ERRORS {
+							if srv.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
 								srv.logger.Println("Error when sending to backend router:", err.Error())
 							}
 						}
@@ -196,7 +197,7 @@ func (srv *Server) thread(n int, spawn bool) error {
 	sock, err := srv.zmq_context.NewSocket(zmq.REQ)
 
 	if err != nil {
-		if srv.loglevel >= LOGLEVEL_ERRORS {
+		if srv.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
 			srv.logger.Println("Thread", n, "could not create socket, exiting!")
 		}
 		return err
@@ -206,7 +207,7 @@ func (srv *Server) thread(n int, spawn bool) error {
 	err = sock.SetIdentity(worker_identity)
 
 	if err != nil {
-		if srv.loglevel >= LOGLEVEL_ERRORS {
+		if srv.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
 			srv.logger.Println("Thread", n, "could not set identity, exiting!")
 		}
 		return err
@@ -239,13 +240,13 @@ func (srv *Server) acceptRequests(sock *zmq.Socket, worker_identity string) erro
 		msgs, err := sock.RecvMessageBytes(0)
 
 		if err == nil && len(msgs) >= 4 {
-			if srv.loglevel >= LOGLEVEL_DEBUG {
+			if srv.loglevel >= clusterrpc.LOGLEVEL_DEBUG {
 				srv.logger.Printf("Worker #%s received message from %x\n", worker_identity, msgs[0])
 			}
 			req := workerRequest{client_id: msgs[0], request_id: msgs[1], data: msgs[3]}
 			srv.handleRequest(&req, sock)
 		} else {
-			if srv.loglevel >= LOGLEVEL_WARNINGS {
+			if srv.loglevel >= clusterrpc.LOGLEVEL_WARNINGS {
 				if err != nil {
 					srv.logger.Println("Skipped incoming message, error:", err.Error())
 				} else if len(msgs) < 4 {
@@ -267,7 +268,7 @@ func (srv *Server) handleRequest(request *workerRequest, sock *zmq.Socket) {
 	pberr := pb.Unmarshal(request.data, &rqproto)
 
 	if pberr != nil {
-		if srv.loglevel >= LOGLEVEL_ERRORS {
+		if srv.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
 			srv.logger.Printf("[%x/_/_] PB unmarshaling error: %s", request.client_id, pberr.Error())
 		}
 		// We can't send an error response because we don't even have a sequence number
@@ -279,7 +280,7 @@ func (srv *Server) handleRequest(request *workerRequest, sock *zmq.Socket) {
 
 	// It is too late... we can discard this request
 	if rqproto.GetDeadline() > 0 && time.Now().Unix() > rqproto.GetDeadline() {
-		if srv.loglevel >= LOGLEVEL_WARNINGS {
+		if srv.loglevel >= clusterrpc.LOGLEVEL_WARNINGS {
 			delta := time.Now().Unix() - rqproto.GetDeadline()
 			srv.logger.Printf("[%x/%s/%d] Timeout occurred, deadline was %d (%d s)", request.client_id, caller_id, rqproto.GetSequenceNumber(), rqproto.GetDeadline(), delta)
 		}
@@ -292,20 +293,20 @@ func (srv *Server) handleRequest(request *workerRequest, sock *zmq.Socket) {
 	srvc, srvc_found := srv.services[rqproto.GetSrvc()]
 
 	if !srvc_found {
-		if srv.loglevel >= LOGLEVEL_WARNINGS {
+		if srv.loglevel >= clusterrpc.LOGLEVEL_WARNINGS {
 			srv.logger.Printf("[%x/%s/%d] NOT_FOUND response to request for service %s\n", request.client_id, caller_id, rqproto.GetSequenceNumber(), rqproto.GetSrvc())
 		}
 		srv.sendError(sock, rqproto, proto.RPCResponse_STATUS_NOT_FOUND, request)
 		return
 	} else {
 		if handler, endpoint_found := srvc.endpoints[rqproto.GetProcedure()]; !endpoint_found {
-			if srv.loglevel >= LOGLEVEL_WARNINGS {
+			if srv.loglevel >= clusterrpc.LOGLEVEL_WARNINGS {
 				srv.logger.Printf("[%x/%s/%d] NOT_FOUND response to request for endpoint %s\n", request.client_id, caller_id, rqproto.GetSequenceNumber(), rqproto.GetSrvc()+"."+rqproto.GetProcedure())
 			}
 			srv.sendError(sock, rqproto, proto.RPCResponse_STATUS_NOT_FOUND, request)
 			return
 		} else {
-			if srv.loglevel >= LOGLEVEL_DEBUG {
+			if srv.loglevel >= clusterrpc.LOGLEVEL_DEBUG {
 				srv.logger.Printf("[%x/%s/%d] Calling endpoint %s.%s...\n", request.client_id, caller_id, rqproto.GetSequenceNumber(), rqproto.GetSrvc(), rqproto.GetProcedure())
 			}
 			cx := newContext(rqproto.GetData())
@@ -319,7 +320,7 @@ func (srv *Server) handleRequest(request *workerRequest, sock *zmq.Socket) {
 			if pberr != nil {
 				srv.sendError(sock, rqproto, proto.RPCResponse_STATUS_SERVER_ERROR, request)
 
-				if srv.loglevel >= LOGLEVEL_ERRORS {
+				if srv.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
 					srv.logger.Printf("[%x/%s/%d] Error when serializing RPCResponse: %s\n", request.client_id, caller_id, rqproto.GetSequenceNumber(), pberr.Error())
 				}
 			} else {
@@ -327,13 +328,13 @@ func (srv *Server) handleRequest(request *workerRequest, sock *zmq.Socket) {
 				_, err := sock.SendMessage(request.client_id, request.request_id, "", response_serialized)
 
 				if err != nil {
-					if srv.loglevel >= LOGLEVEL_WARNINGS {
+					if srv.loglevel >= clusterrpc.LOGLEVEL_WARNINGS {
 						srv.logger.Printf("[%x/%s/%d] Error when sending response; %s\n", request.client_id, caller_id, rqproto.GetSequenceNumber(), err.Error())
 					}
 					return
 				}
 
-				if srv.loglevel >= LOGLEVEL_DEBUG {
+				if srv.loglevel >= clusterrpc.LOGLEVEL_DEBUG {
 					srv.logger.Printf("[%x/%s/%d] Sent response.\n", request.client_id, caller_id, rqproto.GetSequenceNumber())
 				}
 			}

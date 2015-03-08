@@ -1,4 +1,4 @@
-package clusterrpc
+package server
 
 import (
 	"clusterrpc/proto"

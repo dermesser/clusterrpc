@@ -11,6 +11,8 @@ package main
 
 import (
 	"clusterrpc"
+	"clusterrpc/client"
+	"clusterrpc/server"
 	"flag"
 	"fmt"
 	"runtime"
@@ -24,18 +26,18 @@ var host string
 
 var timed_out bool = false
 
-func echoHandler(cx *clusterrpc.Context) {
+func echoHandler(cx *server.Context) {
 	cx.Success(cx.GetInput())
 	fmt.Println("Called echoHandler:", string(cx.GetInput()), len(cx.GetInput()))
 	return
 }
 
-func silentEchoHandler(cx *clusterrpc.Context) {
+func silentEchoHandler(cx *server.Context) {
 	cx.Success(cx.GetInput())
 	return
 }
 
-func errorReturningHandler(cx *clusterrpc.Context) {
+func errorReturningHandler(cx *server.Context) {
 	cx.Fail("Some error occurred in handler, abort")
 	if !timed_out {
 		timed_out = true
@@ -46,7 +48,7 @@ func errorReturningHandler(cx *clusterrpc.Context) {
 
 var i int32 = 0
 
-func redirectHandler(cx *clusterrpc.Context) {
+func redirectHandler(cx *server.Context) {
 	if i%2 == 0 {
 		cx.Redirect(host, port)
 	} else {
@@ -55,12 +57,12 @@ func redirectHandler(cx *clusterrpc.Context) {
 	i++
 }
 
-func server() {
-	srv := clusterrpc.NewServer(host, port, runtime.GOMAXPROCS(0), clusterrpc.LOGLEVEL_DEBUG) // don't set GOMAXPROCS if you want to test the loadbalancer (for correct queuing)
+func Server() {
+	srv := server.NewServer(host, port, runtime.GOMAXPROCS(0), clusterrpc.LOGLEVEL_DEBUG) // don't set GOMAXPROCS if you want to test the loadbalancer (for correct queuing)
 	srv.SetLoglevel(clusterrpc.LOGLEVEL_DEBUG)
-	srv.RegisterEndpoint("EchoService", "Echo", echoHandler)
-	srv.RegisterEndpoint("EchoService", "Error", errorReturningHandler)
-	srv.RegisterEndpoint("EchoService", "Redirect", redirectHandler)
+	srv.RegisterHandler("EchoService", "Echo", echoHandler)
+	srv.RegisterHandler("EchoService", "Error", errorReturningHandler)
+	srv.RegisterHandler("EchoService", "Redirect", redirectHandler)
 
 	e := srv.Start()
 
@@ -69,8 +71,8 @@ func server() {
 	}
 }
 
-func client() {
-	cl, err := clusterrpc.NewClient("echo1_cl", host, port, clusterrpc.LOGLEVEL_DEBUG)
+func Client() {
+	cl, err := client.NewClient("echo1_cl", host, port, clusterrpc.LOGLEVEL_DEBUG)
 	if err != nil {
 		fmt.Println(err.Error())
 		return
@@ -116,8 +118,8 @@ func client() {
 	}
 }
 
-func aclient() {
-	acl, err := clusterrpc.NewAsyncClient("echo1_acl", host, port, 1, clusterrpc.LOGLEVEL_DEBUG)
+func Aclient() {
+	acl, err := client.NewAsyncClient("echo1_acl", host, port, 1, clusterrpc.LOGLEVEL_DEBUG)
 	if err != nil {
 		fmt.Println(err.Error())
 		return
@@ -146,9 +148,9 @@ func aclient() {
 }
 
 func benchServer() {
-	srv := clusterrpc.NewServer(host, port, runtime.GOMAXPROCS(0), clusterrpc.LOGLEVEL_WARNINGS)
+	srv := server.NewServer(host, port, runtime.GOMAXPROCS(0), clusterrpc.LOGLEVEL_WARNINGS)
 	srv.SetLoglevel(clusterrpc.LOGLEVEL_ERRORS)
-	srv.RegisterEndpoint("EchoService", "Echo", silentEchoHandler)
+	srv.RegisterHandler("EchoService", "Echo", silentEchoHandler)
 
 	e := srv.Start()
 
@@ -222,11 +224,11 @@ func main() {
 	}
 
 	if srv {
-		server()
+		Server()
 	} else if cl {
-		client()
+		Client()
 	} else if acl {
-		aclient()
+		Aclient()
 	} else if clbench > 0 {
 		for i := 0; i < runtime.GOMAXPROCS(0)-1; i++ {
 			go benchClient(clbench)

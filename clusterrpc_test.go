@@ -2,6 +2,7 @@ package clusterrpc
 
 import (
 	"bytes"
+	"clusterrpc/server"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -10,8 +11,8 @@ import (
 	"time"
 )
 
-func getServer() *Server {
-	srv := new(Server)
+func getServer() *server.Server {
+	srv := new(server.Server)
 	srv.services = make(map[string]*service)
 
 	return srv
@@ -19,7 +20,7 @@ func getServer() *Server {
 
 func TestRegisterEndpoint(t *testing.T) {
 	srv := getServer()
-	f := func(cx *Context) { cx.Success([]byte("")) }
+	f := func(cx *server.Context) { cx.Success([]byte("")) }
 
 	if nil != srv.RegisterEndpoint("BogusService", "Test1", f) {
 		t.Fail()

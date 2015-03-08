@@ -1,6 +1,7 @@
-package clusterrpc
+package client
 
 import (
+	"clusterrpc"
 	"clusterrpc/proto"
 	"io"
 	"log"
@@ -20,7 +21,7 @@ type Client struct {
 	channel *zmq.Socket
 
 	logger   *log.Logger
-	loglevel LOGLEVEL_T
+	loglevel clusterrpc.LOGLEVEL_T
 
 	name string
 	// Slices to allow multiple connections (round-robin)
@@ -46,7 +47,7 @@ of return codes)
 The default total timeout 12 seconds. (3 tries * 4 seconds)
 
 */
-func NewClient(client_name, raddr string, rport uint, loglevel LOGLEVEL_T) (cl *Client, e error) {
+func NewClient(client_name, raddr string, rport uint, loglevel clusterrpc.LOGLEVEL_T) (cl *Client, e error) {
 	return NewClientRR(client_name, []string{raddr}, []uint{rport}, loglevel)
 }
 
@@ -60,7 +61,7 @@ and only with ones that time out (or fail) rarely (a reconnect to one peer as wi
 returned by NewClient() is cheaper than reconnecting to possibly dozens of servers).
 
 */
-func NewClientRR(client_name string, raddrs []string, rports []uint, loglevel LOGLEVEL_T) (*Client, error) {
+func NewClientRR(client_name string, raddrs []string, rports []uint, loglevel clusterrpc.LOGLEVEL_T) (*Client, error) {
 	if len(raddrs) != len(rports) {
 		return nil, RequestError{status: proto.RPCResponse_STATUS_CLIENT_CALLED_WRONG, message: "raddrs and rports differ in length"}
 	}
@@ -108,7 +109,7 @@ func (cl *Client) SetLogger(l *log.Logger) {
 /*
 Define which errors/situations to log
 */
-func (cl *Client) SetLoglevel(ll LOGLEVEL_T) {
+func (cl *Client) SetLoglevel(ll clusterrpc.LOGLEVEL_T) {
 	cl.lock.Lock()
 	defer cl.lock.Unlock()
 
@@ -166,7 +167,7 @@ func (cl *Client) Close() {
 	cl.lock.Lock()
 	defer cl.lock.Unlock()
 
-	if cl.loglevel >= LOGLEVEL_INFO {
+	if cl.loglevel >= clusterrpc.LOGLEVEL_INFO {
 		cl.logger.Println("Closing client channel")
 	}
 	cl.channel.Close()
