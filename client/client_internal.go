@@ -25,7 +25,7 @@ func (cl *Client) createChannel() error {
 	}
 
 	cl.channel.SetIpv6(true)
-	cl.channel.SetReconnectIvl(100)
+	cl.channel.SetReconnectIvl(100 * time.Millisecond)
 
 	err = cl.connectToPeers()
 
@@ -35,6 +35,8 @@ func (cl *Client) createChannel() error {
 
 	cl.channel.SetSndtimeo(cl.timeout)
 	cl.channel.SetRcvtimeo(cl.timeout)
+	cl.channel.SetReqRelaxed(1)
+	cl.channel.SetReqCorrelate(1)
 
 	return nil
 }
@@ -155,13 +157,6 @@ func (cl *Client) requestInternal(data []byte, service, endpoint string, retries
 				cl.logger.Printf("[%s/%d] Timeout occurred (EAGAIN); retrying\n", cl.name, rqproto.GetSequenceNumber())
 			}
 
-			cl.channel.Close()
-			err = cl.createChannel()
-
-			if err != nil {
-				return nil, err
-			}
-
 			cl.lock.Unlock()
 			msg, next_err := cl.requestInternal(data, service, endpoint, retries_left-1)
 			cl.lock.Lock()
@@ -181,9 +176,6 @@ func (cl *Client) requestInternal(data []byte, service, endpoint string, retries
 			if cl.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
 				cl.logger.Printf("[%s/%d] Network error: %s\n", cl.name, rqproto.GetSequenceNumber(), err.Error())
 			}
-			// Create new channel, old one is "confused" (REQ has an FSM internally allowing only req/rep/req/rep...)
-			cl.channel.Close()
-			cl.createChannel()
 			return nil, RequestError{status: proto.RPCResponse_STATUS_CLIENT_NETWORK_ERROR, message: err.Error()}
 		}
 	}
