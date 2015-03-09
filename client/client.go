@@ -53,12 +53,13 @@ func NewClient(client_name, raddr string, rport uint, loglevel clusterrpc.LOGLEV
 
 /*
 Send requests in a round-robin manner to the given servers. If one of the servers doesn't respond,
-it is taken out of the set that of servers that is queried. It is recommended to re-connect the client
+it is taken out of the set of servers being queried. It is recommended to re-connect the client
 regularly to prevent overloading one server.
 
 Use this only with fast (so you can set a very low timeout), stateless services (because of round-robin),
 and only with ones that time out (or fail) rarely (a reconnect to one peer as with a Client
-returned by NewClient() is cheaper than reconnecting to possibly dozens of servers).
+returned by NewClient() is cheaper than reconnecting to possibly dozens of servers). A typical
+use-case might be a lookup or cache server.
 
 */
 func NewClientRR(client_name string, raddrs []string, rports []uint, loglevel clusterrpc.LOGLEVEL_T) (*Client, error) {
