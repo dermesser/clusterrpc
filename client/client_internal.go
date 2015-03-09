@@ -17,7 +17,7 @@ func (cl *Client) createChannel() error {
 	}
 
 	var err error
-	cl.channel, err = zmq.NewSocket(zmq.DEALER)
+	cl.channel, err = zmq.NewSocket(zmq.REQ)
 
 	if err != nil {
 		cl.logger.Println("Error when creating Req socket:", err.Error())
@@ -27,8 +27,27 @@ func (cl *Client) createChannel() error {
 	cl.channel.SetIpv6(true)
 	cl.channel.SetReconnectIvl(100)
 
+	err = cl.connectToPeers()
+
+	if err != nil {
+		return err
+	}
+
+	cl.channel.SetSndtimeo(cl.timeout)
+	cl.channel.SetRcvtimeo(cl.timeout)
+
+	return nil
+}
+
+// Actual connecting takes place here
+func (cl *Client) connectToPeers() error {
+
 	for i := range cl.raddr {
-		err = cl.channel.Connect(fmt.Sprintf("tcp://%s:%d", cl.raddr[i], cl.rport[i]))
+		peer := fmt.Sprintf("tcp://%s:%d", cl.raddr[i], cl.rport[i])
+
+		// If it was previously connected, first disconnect all
+		cl.channel.Disconnect(peer)
+		err := cl.channel.Connect(peer)
 
 		if err != nil {
 			if len(cl.raddr) < 2 { // only return error if the only connection of this REQ socket couldn't be established
@@ -45,10 +64,6 @@ func (cl *Client) createChannel() error {
 			}
 		}
 	}
-
-	cl.channel.SetSndtimeo(cl.timeout)
-	cl.channel.SetRcvtimeo(cl.timeout)
-
 	return nil
 }
 
@@ -140,13 +155,19 @@ func (cl *Client) requestInternal(data []byte, service, endpoint string, retries
 				cl.logger.Printf("[%s/%d] Timeout occurred (EAGAIN); retrying\n", cl.name, rqproto.GetSequenceNumber())
 			}
 
-			// Do next request; timed-out socket will be disconnected and possibly reconnected
+			cl.channel.Close()
+			err = cl.createChannel()
+
+			if err != nil {
+				return nil, err
+			}
+
 			cl.lock.Unlock()
 			msg, next_err := cl.requestInternal(data, service, endpoint, retries_left-1)
 			cl.lock.Lock()
 
 			if next_err != nil {
-				return nil, RequestError{status: proto.RPCResponse_STATUS_TIMEOUT, message: err.Error()}
+				return nil, next_err
 			} else {
 				return msg, nil
 			}
