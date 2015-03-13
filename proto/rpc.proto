@@ -1,5 +1,15 @@
 package proto;
 
+message TraceInfo {
+    required uint64 received_time = 1;
+    required uint64 replied_time = 2;
+    optional string machine_name = 3;
+    optional string endpoint_name = 4;
+    optional string error_message = 5;
+    optional string redirect = 6;
+    repeated TraceInfo child_calls = 7;
+}
+
 message RPCRequest {
     required uint64 sequence_number = 1;
     required string srvc = 2;
@@ -7,6 +17,7 @@ message RPCRequest {
     required bytes data = 4;
     optional int64 deadline = 5; // UNIX timestamp after which we don't want to have an answer anymore
     optional string caller_id = 6;
+    optional bool want_trace = 7;
 }
 
 message RPCResponse {
@@ -49,5 +60,7 @@ message RPCResponse {
 
     required Status response_status = 7;
     optional string error_message = 8;
+
+    optional TraceInfo traceinfo = 9;
 }
 

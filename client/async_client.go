@@ -104,7 +104,7 @@ func (cl *AsyncClient) startThread() {
 			cl.logger.Println("AsyncClient", cl.client.name, "Warning: Queue is fuller than 70% of its capacity!")
 		}
 
-		rsp, err := cl.client.Request(rq.data, rq.service, rq.endpoint)
+		rsp, err := cl.client.Request(rq.data, rq.service, rq.endpoint, nil)
 
 		rq.callback(rsp, err)
 	}
