@@ -232,9 +232,7 @@ func (cl *Client) sendRequest(rqproto *proto.RPCRequest, retries_left int) ([]by
 				cl.createChannel()
 			}
 
-			cl.lock.Unlock()
 			msg, next_err := cl.sendRequest(rqproto, retries_left-1)
-			cl.lock.Lock()
 
 			if next_err != nil {
 				return nil, next_err
