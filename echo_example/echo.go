@@ -82,7 +82,7 @@ func Client() {
 	cl.SetTimeout(5 * time.Second)
 
 	/// Plain echo
-	resp, err := cl.Request([]byte("helloworld"), "EchoService", "Echo")
+	resp, err := cl.Request([]byte("helloworld"), "EchoService", "Echo", nil)
 
 	if err != nil {
 		fmt.Println(err.Error())
@@ -90,7 +90,7 @@ func Client() {
 		fmt.Println("Received response:", string(resp), len(resp))
 	}
 	/// Return an app error
-	resp, err = cl.Request([]byte("helloworld"), "EchoService", "Error")
+	resp, err = cl.Request([]byte("helloworld"), "EchoService", "Error", nil)
 
 	if err != nil {
 		fmt.Println(err.Error())
@@ -99,7 +99,7 @@ func Client() {
 	}
 
 	/// Redirect us to somewhere else
-	resp, err = cl.Request([]byte("helloworld"), "EchoService", "Redirect")
+	resp, err = cl.Request([]byte("helloworld"), "EchoService", "Redirect", nil)
 
 	if err != nil {
 		fmt.Println(err.Error())
@@ -109,7 +109,7 @@ func Client() {
 
 	// NOT_FOUND
 
-	resp, err = cl.Request([]byte("helloworld"), "EchoService", "DoesNotExist")
+	resp, err = cl.Request([]byte("helloworld"), "EchoService", "DoesNotExist", nil)
 
 	if err != nil {
 		fmt.Println(err.Error())
@@ -173,7 +173,7 @@ func benchClient(n int) {
 	waitgroup.Add(1)
 
 	for i := 0; i < n; i++ {
-		_, err := cl.Request([]byte("H"), "EchoService", "Echo")
+		_, err := cl.Request([]byte("H"), "EchoService", "Echo", nil)
 
 		if err != nil {
 			fmt.Println("Client benchmark error:", err.Error())
