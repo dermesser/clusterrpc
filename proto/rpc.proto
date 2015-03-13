@@ -1,5 +1,13 @@
 package proto;
 
+message TraceInfo {
+    required uint64 received_time = 1;
+    required uint64 replied_time = 2;
+    optional string machine_name = 3;
+    optional string service_name = 4;
+    repeated TraceInfo child_calls = 5;
+}
+
 message RPCRequest {
     required uint64 sequence_number = 1;
     required string srvc = 2;
@@ -49,5 +57,7 @@ message RPCResponse {
 
     required Status response_status = 7;
     optional string error_message = 8;
+
+    repeated TraceInfo traceinfo = 9;
 }
 
