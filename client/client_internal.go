@@ -157,6 +157,11 @@ func (cl *Client) requestInternal(cx *server.Context, trace_dest *proto.TraceInf
 		*trace_dest = *respproto.GetTraceinfo()
 	}
 
+	// Return the acquired traceinfo structure
+	if cx != nil {
+		cx.AppendCall(respproto.GetTraceinfo())
+	}
+
 	if respproto.GetResponseStatus() != proto.RPCResponse_STATUS_OK && respproto.GetResponseStatus() != proto.RPCResponse_STATUS_REDIRECT {
 		if cl.loglevel >= clusterrpc.LOGLEVEL_WARNINGS {
 			cl.logger.Printf("[%s/%d] Received status other than ok from %s: %s\n", cl.name, rqproto.GetSequenceNumber(), service+"."+endpoint, statusToString(respproto.GetResponseStatus()))
@@ -177,13 +182,6 @@ func (cl *Client) requestInternal(cx *server.Context, trace_dest *proto.TraceInf
 			}
 			return nil, RequestError{status: proto.RPCResponse_STATUS_REDIRECT_TOO_OFTEN, message: "Could not follow redirects (redirect loop avoidance)"}
 		}
-	}
-
-	// If we're here, status was OK
-
-	// Return the acquired traceinfo structure
-	if cx != nil {
-		cx.AppendCall(respproto.GetTraceinfo())
 	}
 
 	return respproto.GetResponseData(), nil

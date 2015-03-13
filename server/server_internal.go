@@ -346,6 +346,7 @@ func (srv *Server) handleRequest(request *workerRequest, sock *zmq.Socket) {
 
 // "one-shot" -- doesn't catch Write() errors. But needs a lot of context
 func (srv *Server) sendError(sock *zmq.Socket, rq *proto.RPCRequest, s proto.RPCResponse_Status, request *workerRequest) {
+	// The context functions do most of the work for us.
 	tmp_ctx := srv.newContext(rq)
 	tmp_ctx.Fail(s.String())
 
