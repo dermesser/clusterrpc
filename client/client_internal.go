@@ -70,6 +70,7 @@ func (cl *Client) connectToPeers() error {
 	return nil
 }
 
+// Use only for redirected requests, otherwise the tracing doesn't work as intended!
 func requestOneShot(raddr string, rport uint, service, endpoint string, request_data []byte,
 	allow_redirect bool, settings_cl *Client, trace_dest *proto.TraceInfo) ([]byte, error) {
 	var cl *Client
@@ -95,7 +96,15 @@ func requestOneShot(raddr string, rport uint, service, endpoint string, request_
 		cl.SetTimeout(settings_cl.timeout)
 	}
 
-	rsp, err := cl.Request(request_data, service, endpoint, trace_dest)
+	var trace_dest_new *proto.TraceInfo
+
+	// If a trace is wanted, append this call to the current trace info (because this is a redirect)
+	if trace_dest != nil {
+		trace_dest_new = new(proto.TraceInfo)
+		trace_dest.ChildCalls = append(trace_dest.ChildCalls, trace_dest_new)
+	}
+
+	rsp, err := cl.Request(request_data, service, endpoint, trace_dest_new)
 
 	if err != nil {
 		return rsp, err
@@ -129,6 +138,10 @@ func (cl *Client) requestInternal(cx *server.Context, trace_dest *proto.TraceInf
 
 	msg, err := cl.sendRequest(&rqproto, retries)
 
+	if err != nil {
+		return nil, err
+	}
+
 	respproto := proto.RPCResponse{}
 
 	err = pb.Unmarshal(msg, &respproto)
@@ -138,6 +151,10 @@ func (cl *Client) requestInternal(cx *server.Context, trace_dest *proto.TraceInf
 			cl.logger.Printf("[%s/%d] Error when unmarshaling response: %s\n", cl.name, rqproto.GetSequenceNumber(), err.Error())
 		}
 		return nil, RequestError{status: proto.RPCResponse_STATUS_CLIENT_REQUEST_ERROR, message: err.Error()}
+	}
+
+	if trace_dest != nil && respproto.GetTraceinfo() != nil {
+		*trace_dest = *respproto.GetTraceinfo()
 	}
 
 	if respproto.GetResponseStatus() != proto.RPCResponse_STATUS_OK && respproto.GetResponseStatus() != proto.RPCResponse_STATUS_REDIRECT {
@@ -168,9 +185,6 @@ func (cl *Client) requestInternal(cx *server.Context, trace_dest *proto.TraceInf
 	if cx != nil {
 		cx.AppendCall(respproto.GetTraceinfo())
 	}
-	if trace_dest != nil {
-		*trace_dest = *respproto.GetTraceinfo()
-	}
 
 	return respproto.GetResponseData(), nil
 }
@@ -192,6 +206,7 @@ func (cl *Client) sendRequest(rqproto *proto.RPCRequest, retries_left int) ([]by
 			cl.logger.Printf("[%s/%d] Could not send message to %s. Error: %s\n", cl.name, rqproto.GetSequenceNumber(), rqproto.GetSrvc()+"."+rqproto.GetProcedure(), err.Error())
 		}
 		if err.(zmq.Errno) == 11 { // EAGAIN
+			cl.createChannel()
 			return nil, RequestError{status: proto.RPCResponse_STATUS_TIMEOUT, message: err.Error()}
 		} else {
 			return nil, RequestError{status: proto.RPCResponse_STATUS_CLIENT_NETWORK_ERROR, message: err.Error()}
@@ -213,8 +228,14 @@ func (cl *Client) sendRequest(rqproto *proto.RPCRequest, retries_left int) ([]by
 				cl.logger.Printf("[%s/%d] Timeout occurred (EAGAIN); retrying\n", cl.name, rqproto.GetSequenceNumber())
 			}
 
+			// Reconnect if there is only one peer (otherwise send() times out b/c the peer
+			// is removed from the set in the REQ socket)
+			if len(cl.raddr) == 1 {
+				cl.createChannel()
+			}
+
 			cl.lock.Unlock()
-			msg, next_err := cl.sendRequest(rqproto, retries_left)
+			msg, next_err := cl.sendRequest(rqproto, retries_left-1)
 			cl.lock.Lock()
 
 			if next_err != nil {
