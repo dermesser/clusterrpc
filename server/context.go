@@ -30,7 +30,7 @@ func (srv *Server) newContext(request *proto.RPCRequest) *Context {
 
 	if request.GetWantTrace() {
 		c.this_call = new(proto.TraceInfo)
-		c.this_call.ServiceName = pb.String(request.GetSrvc() + "." + request.GetProcedure())
+		c.this_call.EndpointName = pb.String(request.GetSrvc() + "." + request.GetProcedure())
 		c.this_call.MachineName = pb.String(srv.machine_name)
 		c.this_call.ReceivedTime = pb.Uint64(uint64(time.Now().UnixNano() / 1000))
 	}

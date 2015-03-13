@@ -346,13 +346,14 @@ func (srv *Server) handleRequest(request *workerRequest, sock *zmq.Socket) {
 
 // "one-shot" -- doesn't catch Write() errors. But needs a lot of context
 func (srv *Server) sendError(sock *zmq.Socket, rq *proto.RPCRequest, s proto.RPCResponse_Status, request *workerRequest) {
-	response := proto.RPCResponse{}
+	tmp_ctx := srv.newContext(rq)
+	tmp_ctx.Fail(s.String())
 
-	response.SequenceNumber = pb.Uint64(rq.GetSequenceNumber()) // may be zero
-	response.ResponseStatus = new(proto.RPCResponse_Status)
-	*response.ResponseStatus = s
+	response := tmp_ctx.toRPCResponse()
+	response.SequenceNumber = rq.SequenceNumber
+	response.ResponseStatus = s.Enum()
 
-	buf, err := pb.Marshal(&response)
+	buf, err := pb.Marshal(response)
 
 	if err != nil {
 		return // Let the client time out. We can't do anything (although this isn't supposed to happen)
