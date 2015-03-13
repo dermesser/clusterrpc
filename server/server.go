@@ -23,9 +23,10 @@ type Server struct {
 	services                        map[string]*service
 	logger                          *log.Logger
 	// The timeout only applies on client connections (R/W), not the Listener
-	timeout   time.Duration
-	loglevel  clusterrpc.LOGLEVEL_T
-	n_threads int
+	timeout      time.Duration
+	loglevel     clusterrpc.LOGLEVEL_T
+	n_threads    int
+	machine_name string
 }
 
 /*
@@ -262,4 +263,9 @@ func (srv *Server) UnregisterHandler(svc, endpoint string) (err error) {
 	}
 
 	return
+}
+
+// Set the machine name as shown in traces
+func (srv *Server) SetMachineName(name string) {
+	srv.machine_name = name
 }

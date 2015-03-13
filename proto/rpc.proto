@@ -15,6 +15,7 @@ message RPCRequest {
     required bytes data = 4;
     optional int64 deadline = 5; // UNIX timestamp after which we don't want to have an answer anymore
     optional string caller_id = 6;
+    optional bool want_trace = 7;
 }
 
 message RPCResponse {
@@ -58,6 +59,6 @@ message RPCResponse {
     required Status response_status = 7;
     optional string error_message = 8;
 
-    repeated TraceInfo traceinfo = 9;
+    optional TraceInfo traceinfo = 9;
 }
 

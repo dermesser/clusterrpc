@@ -264,8 +264,8 @@ func (srv *Server) acceptRequests(sock *zmq.Socket, worker_identity string) erro
 // client_identity is the unique number assigned by ZeroMQ. data is the raw data input from the client.
 func (srv *Server) handleRequest(request *workerRequest, sock *zmq.Socket) {
 
-	rqproto := proto.RPCRequest{}
-	pberr := pb.Unmarshal(request.data, &rqproto)
+	rqproto := new(proto.RPCRequest)
+	pberr := pb.Unmarshal(request.data, rqproto)
 
 	if pberr != nil {
 		if srv.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
@@ -309,7 +309,7 @@ func (srv *Server) handleRequest(request *workerRequest, sock *zmq.Socket) {
 			if srv.loglevel >= clusterrpc.LOGLEVEL_DEBUG {
 				srv.logger.Printf("[%x/%s/%d] Calling endpoint %s.%s...\n", request.client_id, caller_id, rqproto.GetSequenceNumber(), rqproto.GetSrvc(), rqproto.GetProcedure())
 			}
-			cx := newContext(rqproto.GetData())
+			cx := srv.newContext(rqproto)
 
 			// Actual invocation!!
 			handler(cx)
@@ -317,7 +317,7 @@ func (srv *Server) handleRequest(request *workerRequest, sock *zmq.Socket) {
 			rpproto := cx.toRPCResponse()
 			rpproto.SequenceNumber = pb.Uint64(rqproto.GetSequenceNumber())
 
-			response_serialized, pberr := pb.Marshal(&rpproto)
+			response_serialized, pberr := pb.Marshal(rpproto)
 
 			if pberr != nil {
 				srv.sendError(sock, rqproto, proto.RPCResponse_STATUS_SERVER_ERROR, request)
@@ -345,7 +345,7 @@ func (srv *Server) handleRequest(request *workerRequest, sock *zmq.Socket) {
 }
 
 // "one-shot" -- doesn't catch Write() errors. But needs a lot of context
-func (srv *Server) sendError(sock *zmq.Socket, rq proto.RPCRequest, s proto.RPCResponse_Status, request *workerRequest) {
+func (srv *Server) sendError(sock *zmq.Socket, rq *proto.RPCRequest, s proto.RPCResponse_Status, request *workerRequest) {
 	response := proto.RPCResponse{}
 
 	response.SequenceNumber = pb.Uint64(rq.GetSequenceNumber()) // may be zero

@@ -2,6 +2,7 @@ package server
 
 import (
 	"clusterrpc/proto"
+	"time"
 
 	pb "github.com/golang/protobuf/proto"
 )
@@ -17,12 +18,22 @@ type Context struct {
 	redir_host                    string
 	redir_port                    uint
 	redir_service, redir_endpoint string
+	// Tracing info
+	this_call *proto.TraceInfo
 }
 
-func newContext(input []byte) *Context {
+func (srv *Server) newContext(request *proto.RPCRequest) *Context {
 	c := new(Context)
-	c.input = input
+	c.input = request.GetData()
 	c.failed = false
+
+	if request.GetWantTrace() {
+		c.this_call = new(proto.TraceInfo)
+		c.this_call.ServiceName = pb.String(request.GetSrvc() + "." + request.GetProcedure())
+		c.this_call.MachineName = pb.String(srv.machine_name)
+		c.this_call.ReceivedTime = pb.Uint64(uint64(time.Now().UnixNano() / 1000))
+	}
+
 	return c
 }
 
@@ -67,14 +78,13 @@ func (c *Context) Success(data []byte) {
 	c.result = data
 }
 
-func (cx *Context) toRPCResponse() proto.RPCResponse {
-	rpproto := proto.RPCResponse{}
-	rpproto.ResponseStatus = new(proto.RPCResponse_Status)
+func (cx *Context) toRPCResponse() *proto.RPCResponse {
+	rpproto := new(proto.RPCResponse)
 
 	if !cx.failed {
-		*rpproto.ResponseStatus = proto.RPCResponse_STATUS_OK
+		rpproto.ResponseStatus = proto.RPCResponse_STATUS_OK.Enum()
 	} else {
-		*rpproto.ResponseStatus = proto.RPCResponse_STATUS_NOT_OK
+		rpproto.ResponseStatus = proto.RPCResponse_STATUS_NOT_OK.Enum()
 		rpproto.ErrorMessage = pb.String(cx.errorMessage)
 	}
 
@@ -85,7 +95,12 @@ func (cx *Context) toRPCResponse() proto.RPCResponse {
 		rpproto.RedirPort = pb.Uint32(uint32(cx.redir_port))
 		rpproto.RedirService = pb.String(cx.redir_service)
 		rpproto.RedirEndpoint = pb.String(cx.redir_endpoint)
-		*rpproto.ResponseStatus = proto.RPCResponse_STATUS_REDIRECT
+		rpproto.ResponseStatus = proto.RPCResponse_STATUS_REDIRECT.Enum()
+	}
+	// Tracing enabled
+	if cx.this_call != nil {
+		cx.this_call.RepliedTime = pb.Uint64(uint64(time.Now().UnixNano() / 1000))
+		rpproto.Traceinfo = cx.this_call
 	}
 
 	return rpproto
