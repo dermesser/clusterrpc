@@ -12,6 +12,7 @@ package main
 import (
 	"clusterrpc"
 	"clusterrpc/client"
+	"clusterrpc/proto"
 	"clusterrpc/server"
 	"flag"
 	"fmt"
@@ -46,15 +47,29 @@ func errorReturningHandler(cx *server.Context) {
 	return
 }
 
+// Calls another procedure on the same server (itself)
+func callingHandler(cx *server.Context) {
+	cl, err := client.NewClient("caller", host, port, clusterrpc.LOGLEVEL_WARNINGS)
+
+	if err != nil {
+		cx.Success([]byte("heyho :'("))
+		return
+	}
+
+	b, err := cl.RequestWithCtx(cx, []byte("xyz"), "EchoService", "Echo")
+
+	if err != nil {
+		cx.Success([]byte("heyho :''("))
+		return
+	}
+
+	cx.Success(b)
+}
+
 var i int32 = 0
 
 func redirectHandler(cx *server.Context) {
-	if i%2 == 0 {
-		cx.Redirect(host, port)
-	} else {
-		cx.Success([]byte("Hello from redirected!"))
-	}
-	i++
+	cx.RedirectEndpoint(host, port, "EchoService", "Echo")
 }
 
 func Server() {
@@ -63,7 +78,7 @@ func Server() {
 	srv.RegisterHandler("EchoService", "Echo", echoHandler)
 	srv.RegisterHandler("EchoService", "Error", errorReturningHandler)
 	srv.RegisterHandler("EchoService", "Redirect", redirectHandler)
-
+	srv.RegisterHandler("EchoService", "CallOther", callingHandler)
 	e := srv.Start()
 
 	if e != nil {
@@ -81,8 +96,11 @@ func Client() {
 	cl.SetLoglevel(clusterrpc.LOGLEVEL_DEBUG)
 	cl.SetTimeout(5 * time.Second)
 
+	trace_info := new(proto.TraceInfo)
+
 	/// Plain echo
-	resp, err := cl.Request([]byte("helloworld"), "EchoService", "Echo", nil)
+	resp, err := cl.Request([]byte("helloworld"), "EchoService", "Echo", trace_info)
+	fmt.Println(client.FormatTraceInfo(trace_info, 0))
 
 	if err != nil {
 		fmt.Println(err.Error())
@@ -90,7 +108,8 @@ func Client() {
 		fmt.Println("Received response:", string(resp), len(resp))
 	}
 	/// Return an app error
-	resp, err = cl.Request([]byte("helloworld"), "EchoService", "Error", nil)
+	resp, err = cl.Request([]byte("helloworld"), "EchoService", "Error", trace_info)
+	fmt.Println(client.FormatTraceInfo(trace_info, 0))
 
 	if err != nil {
 		fmt.Println(err.Error())
@@ -99,7 +118,9 @@ func Client() {
 	}
 
 	/// Redirect us to somewhere else
-	resp, err = cl.Request([]byte("helloworld"), "EchoService", "Redirect", nil)
+
+	resp, err = cl.Request([]byte("helloworld"), "EchoService", "Redirect", trace_info)
+	fmt.Println(client.FormatTraceInfo(trace_info, 0))
 
 	if err != nil {
 		fmt.Println(err.Error())
@@ -109,7 +130,18 @@ func Client() {
 
 	// NOT_FOUND
 
-	resp, err = cl.Request([]byte("helloworld"), "EchoService", "DoesNotExist", nil)
+	resp, err = cl.Request([]byte("helloworld"), "EchoService", "DoesNotExist", trace_info)
+	fmt.Println(client.FormatTraceInfo(trace_info, 0))
+
+	if err != nil {
+		fmt.Println(err.Error())
+	} else {
+		fmt.Println("Received response:", string(resp), len(resp))
+	}
+
+	// Cascading function (calls other RPC)
+	resp, err = cl.Request([]byte("helloworld"), "EchoService", "CallOther", trace_info)
+	fmt.Println(client.FormatTraceInfo(trace_info, 0))
 
 	if err != nil {
 		fmt.Println(err.Error())
