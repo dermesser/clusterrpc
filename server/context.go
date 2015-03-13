@@ -2,6 +2,7 @@ package server
 
 import (
 	"clusterrpc/proto"
+	"fmt"
 	"time"
 
 	pb "github.com/golang/protobuf/proto"
@@ -14,7 +15,7 @@ and takes the response.
 type Context struct {
 	input, result                 []byte
 	failed, redirected            bool
-	errorMessage                  string
+	error_message                 string
 	redir_host                    string
 	redir_port                    uint
 	redir_service, redir_endpoint string
@@ -37,6 +38,19 @@ func (srv *Server) newContext(request *proto.RPCRequest) *Context {
 	return c
 }
 
+// For half-external use, e.g. by the client package
+func (c *Context) GetTraceInfo() *proto.TraceInfo {
+	return c.this_call
+}
+
+// Append call that was made
+func (c *Context) AppendCall(traceinfo *proto.TraceInfo) {
+	if traceinfo != nil {
+		c.this_call.ChildCalls = append(c.this_call.ChildCalls, traceinfo)
+	}
+	return
+}
+
 /*
 Get the data that was sent by the client.
 */
@@ -49,7 +63,7 @@ Fail with msg as error message (gets sent back to the client)
 */
 func (c *Context) Fail(msg string) {
 	c.failed = true
-	c.errorMessage = msg
+	c.error_message = msg
 }
 
 /*
@@ -85,7 +99,7 @@ func (cx *Context) toRPCResponse() *proto.RPCResponse {
 		rpproto.ResponseStatus = proto.RPCResponse_STATUS_OK.Enum()
 	} else {
 		rpproto.ResponseStatus = proto.RPCResponse_STATUS_NOT_OK.Enum()
-		rpproto.ErrorMessage = pb.String(cx.errorMessage)
+		rpproto.ErrorMessage = pb.String(cx.error_message)
 	}
 
 	rpproto.ResponseData = cx.result
@@ -96,10 +110,21 @@ func (cx *Context) toRPCResponse() *proto.RPCResponse {
 		rpproto.RedirService = pb.String(cx.redir_service)
 		rpproto.RedirEndpoint = pb.String(cx.redir_endpoint)
 		rpproto.ResponseStatus = proto.RPCResponse_STATUS_REDIRECT.Enum()
+
 	}
 	// Tracing enabled
 	if cx.this_call != nil {
 		cx.this_call.RepliedTime = pb.Uint64(uint64(time.Now().UnixNano() / 1000))
+
+		if cx.failed {
+			cx.this_call.ErrorMessage = pb.String(cx.error_message)
+		}
+
+		if cx.redirected {
+			cx.this_call.Redirect = pb.String(fmt.Sprintf("%s:%d/%s.%s", cx.redir_host, cx.redir_port,
+				cx.redir_service, cx.redir_endpoint))
+		}
+
 		rpproto.Traceinfo = cx.this_call
 	}
 

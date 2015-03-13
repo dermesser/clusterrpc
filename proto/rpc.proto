@@ -5,7 +5,9 @@ message TraceInfo {
     required uint64 replied_time = 2;
     optional string machine_name = 3;
     optional string service_name = 4;
-    repeated TraceInfo child_calls = 5;
+    optional string error_message = 5;
+    optional string redirect = 6;
+    repeated TraceInfo child_calls = 7;
 }
 
 message RPCRequest {

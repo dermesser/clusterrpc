@@ -3,6 +3,7 @@ package client
 import (
 	"clusterrpc"
 	"clusterrpc/proto"
+	"clusterrpc/server"
 	"io"
 	"log"
 	"os"
@@ -176,6 +177,13 @@ func (cl *Client) Close() {
 }
 
 /*
+Sends request to the default method (set by SetDefault()). error is actually a RequestError object.
+*/
+func (cl *Client) RequestDefault(data []byte) ([]byte, error) {
+	return cl.Request(data, cl.default_service, cl.default_endpoint, nil)
+}
+
+/*
 Call a remote procedure service.endpoint with data as input.
 
 Returns either a byte slice and nil or an undefined byte slice and a clusterrpc.RequestError
@@ -197,16 +205,24 @@ to another set of servers. Another possible caveat is that a single hot client c
 load on a server if the client's request load is so high that it only can be managed using the rotation
 between multiple servers. If possible, avoid such clients.
 
+If trace_dest is not nil, a TraceInfo protobuf struct will be placed at the location the pointer
+points to. Tracing calls is however impacting performance, so only a fraction of calls should
+be traced. The TraceInfo structure is essentially a tree of the calls made on behalf of this
+original call.
 */
-func (cl *Client) Request(data []byte, service, endpoint string) ([]byte, error) {
-	return cl.requestInternal(data, service, endpoint, int(cl.eagain_retries))
+func (cl *Client) Request(data []byte, service, endpoint string, trace_dest *proto.TraceInfo) ([]byte, error) {
+	return cl.requestInternal(nil, trace_dest, data, service, endpoint, int(cl.eagain_retries))
 }
 
 /*
-Sends request to the default method (set by SetDefault()). error is actually a RequestError object.
+Call another service from within a handler.
+
+This takes a context which is used for deadline propagation and full-stack call tracing.
+It is recommended to use this in handlers, as plain Request() will not propagate important
+call information.
 */
-func (cl *Client) RequestDefault(data []byte) ([]byte, error) {
-	return cl.Request(data, cl.default_service, cl.default_endpoint)
+func (cl *Client) RequestWithCtx(cx *server.Context, data []byte, service, endpoint string) ([]byte, error) {
+	return cl.requestInternal(cx, nil, data, service, endpoint, int(cl.eagain_retries))
 }
 
 /*
@@ -220,5 +236,5 @@ The pointer to a client can be nil; otherwise, settings such as timeout, logging
 are copied from it.
 */
 func RequestOneShot(raddr string, rport uint, service, endpoint string, request_data []byte) ([]byte, error) {
-	return requestOneShot(raddr, rport, service, endpoint, request_data, true, nil)
+	return requestOneShot(raddr, rport, service, endpoint, request_data, true, nil, nil)
 }
