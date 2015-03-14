@@ -90,7 +90,7 @@ func Server() {
 
 	hostname, err := os.Hostname()
 
-	if err != nil {
+	if err == nil {
 		srv.SetMachineName(hostname)
 	}
 
