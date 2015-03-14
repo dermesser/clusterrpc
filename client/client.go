@@ -179,9 +179,10 @@ func FormatTraceInfo(ti *proto.TraceInfo, indent int) string {
 	indent_string := strings.Repeat(" ", indent)
 	buf := bytes.NewBuffer(nil)
 
-	fmt.Fprintf(buf, "%sReceived: %s\n%sReplied: %s\n", indent_string,
-		time.Unix(0, int64(1000*ti.GetReceivedTime())).UTC().Format(TRACE_INFO_TIME_FORMAT),
-		indent_string,
+	fmt.Fprintf(buf, "%sReceived: %s\n", indent_string,
+		time.Unix(0, int64(1000*ti.GetReceivedTime())).UTC().Format(TRACE_INFO_TIME_FORMAT))
+
+	fmt.Fprintf(buf, "%sReplied: %s\n", indent_string,
 		time.Unix(0, int64(1000*ti.GetRepliedTime())).UTC().Format(TRACE_INFO_TIME_FORMAT))
 
 	if ti.GetMachineName() != "" {

@@ -6,6 +6,10 @@ Use either as
 or
 
 	$ echo -cl
+
+When not using standard host (localhost) for binding the server, don't use '*' or '0.0.0.0'
+as the server will redirect and connect to itself using this address. Therefore you have
+to use an exact address, e.g. -host=192.168.1.23.
 */
 package main
 

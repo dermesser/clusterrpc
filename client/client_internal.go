@@ -79,16 +79,21 @@ func requestRedirect(raddr string, rport uint, service, endpoint string, request
 
 	if settings_cl != nil {
 		cl, err = NewClient(settings_cl.name+"_redir", raddr, rport, settings_cl.loglevel)
+
+		if err != nil {
+			return nil, RequestError{status: proto.RPCResponse_STATUS_CLIENT_REQUEST_ERROR, message: err.Error()}
+		}
+
 		cl.loglevel = settings_cl.loglevel
 		cl.logger = settings_cl.logger
 		cl.SetTimeout(settings_cl.timeout)
 		cl.accept_redirect = allow_redirect
 	} else {
 		cl, err = NewClient("anonymous_tmp_client", raddr, rport, clusterrpc.LOGLEVEL_WARNINGS)
-	}
 
-	if err != nil {
-		return nil, RequestError{status: proto.RPCResponse_STATUS_CLIENT_REQUEST_ERROR, message: err.Error()}
+		if err != nil {
+			return nil, RequestError{status: proto.RPCResponse_STATUS_CLIENT_REQUEST_ERROR, message: err.Error()}
+		}
 	}
 
 	defer cl.Close()
@@ -155,11 +160,9 @@ func (cl *Client) request(cx *server.Context, trace_dest *proto.TraceInfo, data 
 		return nil, RequestError{status: proto.RPCResponse_STATUS_CLIENT_REQUEST_ERROR, message: err.Error()}
 	}
 
-	if trace_dest != nil {
+	if trace_dest != nil && respproto.GetTraceinfo() != nil {
 		// Store the received traceinfo in trace_dest and/or context (usually one of both)
-		if respproto.GetTraceinfo() != nil {
-			*trace_dest = *respproto.GetTraceinfo()
-		}
+		*trace_dest = *respproto.GetTraceinfo()
 	}
 	if cx != nil {
 		cx.AppendCallTrace(respproto.GetTraceinfo())
