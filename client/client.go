@@ -42,12 +42,11 @@ type Client struct {
 /*
 Create a new client that connects to the clusterrpc server at raddr:rport.
 The client_name is used for logging purposes. The new client has a default
-timeout of 5 seconds (the network operations will time out after this duration
+timeout of 4 seconds (the network operations will time out after this duration
 and return an error). Typically, a timed out request will be retried twice
-before returning (i.e. the actual timeout is 15 seconds). error is a RequestError object with err.Status()
+before returning (i.e. the actual timeout is 12 seconds). error is a RequestError object with err.Status()
 being "STATUS_TIMEOUT" in case of a timeout (consolt Status()'s documentation for a list
 of return codes)
-The default total timeout 12 seconds. (3 tries * 4 seconds)
 
 */
 func NewClient(client_name, raddr string, rport uint, loglevel clusterrpc.LOGLEVEL_T) (cl *Client, e error) {
