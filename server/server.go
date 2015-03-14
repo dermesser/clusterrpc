@@ -204,6 +204,11 @@ func (srv *Server) SetLoglevel(l clusterrpc.LOGLEVEL_T) {
 	srv.loglevel = l
 }
 
+// Set the machine name as shown in traces
+func (srv *Server) SetMachineName(name string) {
+	srv.machine_name = name
+}
+
 /*
 Add a new endpoint (i.e. a handler); svc is the "namespace" in which to register the handler,
 endpoint the name with which the handler can be identified from the outside. The service
@@ -263,9 +268,4 @@ func (srv *Server) UnregisterHandler(svc, endpoint string) (err error) {
 	}
 
 	return
-}
-
-// Set the machine name as shown in traces
-func (srv *Server) SetMachineName(name string) {
-	srv.machine_name = name
 }

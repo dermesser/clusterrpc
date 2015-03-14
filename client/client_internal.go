@@ -11,6 +11,7 @@ import (
 	zmq "github.com/pebbe/zmq4"
 )
 
+// (Re)connect to the peers that are stored in the Client object
 func (cl *Client) createChannel() error {
 
 	if cl.channel != nil {
@@ -71,13 +72,17 @@ func (cl *Client) connectToPeers() error {
 }
 
 // Use only for redirected requests, otherwise the tracing doesn't work as intended!
-func requestOneShot(raddr string, rport uint, service, endpoint string, request_data []byte,
+func requestRedirect(raddr string, rport uint, service, endpoint string, request_data []byte,
 	allow_redirect bool, settings_cl *Client, trace_dest *proto.TraceInfo) ([]byte, error) {
 	var cl *Client
 	var err error
 
 	if settings_cl != nil {
-		cl, err = NewClient(settings_cl.name+"_tmp", raddr, rport, settings_cl.loglevel)
+		cl, err = NewClient(settings_cl.name+"_redir", raddr, rport, settings_cl.loglevel)
+		cl.loglevel = settings_cl.loglevel
+		cl.logger = settings_cl.logger
+		cl.SetTimeout(settings_cl.timeout)
+		cl.accept_redirect = allow_redirect
 	} else {
 		cl, err = NewClient("anonymous_tmp_client", raddr, rport, clusterrpc.LOGLEVEL_WARNINGS)
 	}
@@ -88,32 +93,25 @@ func requestOneShot(raddr string, rport uint, service, endpoint string, request_
 
 	defer cl.Close()
 
-	cl.accept_redirect = allow_redirect
-
-	if settings_cl != nil {
-		cl.loglevel = settings_cl.loglevel
-		cl.logger = settings_cl.logger
-		cl.SetTimeout(settings_cl.timeout)
-	}
-
-	var trace_dest_new *proto.TraceInfo
+	var new_trace_dest *proto.TraceInfo
 
 	// If a trace is wanted, append this call to the current trace info (because this is a redirect)
 	if trace_dest != nil {
-		trace_dest_new = new(proto.TraceInfo)
-		trace_dest.ChildCalls = append(trace_dest.ChildCalls, trace_dest_new)
+		new_trace_dest = new(proto.TraceInfo)
+		trace_dest.ChildCalls = append(trace_dest.ChildCalls, new_trace_dest)
 	}
 
-	rsp, err := cl.Request(request_data, service, endpoint, trace_dest_new)
+	rsp, err := cl.Request(request_data, service, endpoint, new_trace_dest)
 
 	if err != nil {
 		return rsp, err
 	}
 
 	return rsp, nil
+	// Close() is deferred
 }
 
-func (cl *Client) requestInternal(cx *server.Context, trace_dest *proto.TraceInfo, data []byte,
+func (cl *Client) request(cx *server.Context, trace_dest *proto.TraceInfo, data []byte,
 	service, endpoint string, retries int) ([]byte, error) {
 	cl.lock.Lock()
 	defer cl.lock.Unlock()
@@ -153,11 +151,10 @@ func (cl *Client) requestInternal(cx *server.Context, trace_dest *proto.TraceInf
 		return nil, RequestError{status: proto.RPCResponse_STATUS_CLIENT_REQUEST_ERROR, message: err.Error()}
 	}
 
+	// Store the received traceinfo in trace_dest and/or context (usually one of both)
 	if trace_dest != nil && respproto.GetTraceinfo() != nil {
 		*trace_dest = *respproto.GetTraceinfo()
 	}
-
-	// Return the acquired traceinfo structure
 	if cx != nil {
 		cx.AppendCall(respproto.GetTraceinfo())
 	}
@@ -170,10 +167,10 @@ func (cl *Client) requestInternal(cx *server.Context, trace_dest *proto.TraceInf
 	} else if respproto.GetResponseStatus() == proto.RPCResponse_STATUS_REDIRECT {
 		if cl.accept_redirect {
 			if respproto.GetRedirService() == "" || respproto.GetRedirEndpoint() == "" { // No different service.endpoint given, retry with same method
-				return requestOneShot(respproto.GetRedirHost(), uint(respproto.GetRedirPort()),
+				return requestRedirect(respproto.GetRedirHost(), uint(respproto.GetRedirPort()),
 					service, endpoint, data, false, cl, trace_dest)
 			} else {
-				return requestOneShot(respproto.GetRedirHost(), uint(respproto.GetRedirPort()),
+				return requestRedirect(respproto.GetRedirHost(), uint(respproto.GetRedirPort()),
 					respproto.GetRedirService(), respproto.GetRedirEndpoint(), data, false, cl, trace_dest)
 			}
 		} else {
@@ -188,6 +185,8 @@ func (cl *Client) requestInternal(cx *server.Context, trace_dest *proto.TraceInf
 }
 
 func (cl *Client) sendRequest(rqproto *proto.RPCRequest, retries_left int) ([]byte, error) {
+	// cl is already locked
+
 	rq_serialized, pberr := pb.Marshal(rqproto)
 
 	if pberr != nil {
