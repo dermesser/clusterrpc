@@ -20,6 +20,7 @@ import (
 	"clusterrpc/server"
 	"flag"
 	"fmt"
+	"os"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -86,7 +87,13 @@ func redirectHandler(cx *server.Context) {
 func Server() {
 	srv := server.NewServer(host, port, runtime.GOMAXPROCS(0), clusterrpc.LOGLEVEL_DEBUG) // don't set GOMAXPROCS if you want to test the loadbalancer (for correct queuing)
 	srv.SetLoglevel(clusterrpc.LOGLEVEL_DEBUG)
-	srv.SetMachineName("cluster-node-1.example.com")
+
+	hostname, err := os.Hostname()
+
+	if err != nil {
+		srv.SetMachineName(hostname)
+	}
+
 	srv.RegisterHandler("EchoService", "Echo", echoHandler)
 	srv.RegisterHandler("EchoService", "Error", errorReturningHandler)
 	srv.RegisterHandler("EchoService", "Redirect", redirectHandler)
