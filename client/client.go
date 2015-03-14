@@ -130,14 +130,13 @@ func (cl *Client) SetRetries(n uint) {
 }
 
 /*
-Sets the duration in seconds to wait for R/W operations and to use for calculating
-the deadline of a Request.
+Sets the duration to wait for R/W operations and to use for calculating the deadline of a Request.
+The deadline is propagated to following calls the called endpoint may issue. If the deadline has
+already been exceeded, servers will not process the request but throw it away.
 
-RPCRequests will be sent with the current time plus `timeout` as deadline. If the
+RPC requests will be sent with the current time plus `timeout` as deadline. If the
 server starts processing of the request after the deadline (e.g. because it is loaded and has a rather
-long accept() queue, it will respond with a STATUS_TIMEOUT message. The timeout,
-however, doesn't mean that the server will stop the handler after the deadline.
-It is only used for determining if a response is still wanted.
+long accept() queue, it will respond with a STATUS_TIMEOUT message.
 */
 func (cl *Client) SetTimeout(timeout time.Duration) {
 	cl.lock.Lock()
@@ -249,6 +248,10 @@ func (cl *Client) RequestWithCtx(cx *server.Context, data []byte, service, endpo
 	return cl.request(cx, nil, data, service, endpoint, int(cl.eagain_retries))
 }
 
+/*
+Does the same as RequestWithCtx, but also stores the trace in the specified destination. This is useful
+in case a service wants to receive traces of the calls it issues.
+*/
 func (cl *Client) RequestWithCtxAndTrace(cx *server.Context, trace_dest *proto.TraceInfo, data []byte,
 	service, endpoint string) ([]byte, error) {
 	return cl.request(cx, trace_dest, data, service, endpoint, int(cl.eagain_retries))

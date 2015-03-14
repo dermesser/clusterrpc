@@ -119,7 +119,7 @@ func (cx *Context) toRPCResponse() *proto.RPCResponse {
 	if cx.deadline.UnixNano() > 0 && time.Now().UnixNano() > cx.deadline.UnixNano() {
 		rpproto.ResponseData = []byte{}
 		rpproto.ResponseStatus = proto.RPCResponse_STATUS_MISSED_DEADLINE.Enum()
-		rpproto.ErrorMessage = pb.String("Missed deadline")
+		rpproto.ErrorMessage = pb.String("Exceeded deadline")
 	}
 
 	if cx.redirected {
