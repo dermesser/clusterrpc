@@ -191,20 +191,13 @@ func (srv *Server) DisableLogging() {
 }
 
 /*
-Set the timeout that applies to reads and writes on client sockets.
-*/
-func (srv *Server) SetClientWTimeout(d time.Duration) {
-	srv.timeout = d
-}
-
-/*
 Set loglevel of this server.
 */
 func (srv *Server) SetLoglevel(l clusterrpc.LOGLEVEL_T) {
 	srv.loglevel = l
 }
 
-// Set the machine name as shown in traces
+// Set the machine name as shown in traces (os.Hostname() can be used to obtain the DNS name)
 func (srv *Server) SetMachineName(name string) {
 	srv.machine_name = name
 }
