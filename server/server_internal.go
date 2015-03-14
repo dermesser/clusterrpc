@@ -278,14 +278,14 @@ func (srv *Server) handleRequest(request *workerRequest, sock *zmq.Socket) {
 
 	caller_id := rqproto.GetCallerId()
 
-	// It is too late... we can discard this request
+	// It is already too late... we can discard this request
 	if rqproto.GetDeadline() > 0 && time.Now().Unix() > rqproto.GetDeadline() {
 		if srv.loglevel >= clusterrpc.LOGLEVEL_WARNINGS {
 			delta := time.Now().Unix() - rqproto.GetDeadline()
 			srv.logger.Printf("[%x/%s/%d] Timeout occurred, deadline was %d (%d s)", request.client_id, caller_id, rqproto.GetSequenceNumber(), rqproto.GetDeadline(), delta)
 		}
 		// Sending this to get the REQ socket in the right state
-		srv.sendError(sock, rqproto, proto.RPCResponse_STATUS_TIMEOUT, request)
+		srv.sendError(sock, rqproto, proto.RPCResponse_STATUS_MISSED_DEADLINE, request)
 		return
 	}
 

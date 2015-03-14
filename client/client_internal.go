@@ -113,6 +113,7 @@ func requestRedirect(raddr string, rport uint, service, endpoint string, request
 
 func (cl *Client) request(cx *server.Context, trace_dest *proto.TraceInfo, data []byte,
 	service, endpoint string, retries int) ([]byte, error) {
+
 	cl.lock.Lock()
 	defer cl.lock.Unlock()
 
@@ -126,8 +127,11 @@ func (cl *Client) request(cx *server.Context, trace_dest *proto.TraceInfo, data 
 	rqproto.Data = data
 	rqproto.CallerId = pb.String(cl.name)
 
-	if cl.timeout > 0 {
-		rqproto.Deadline = pb.Int64(time.Now().Unix() + int64(cl.timeout.Seconds()))
+	// Deadline from context has precedence.
+	if cx != nil {
+		rqproto.Deadline = pb.Int64(cx.GetDeadline().UnixNano() / 1000)
+	} else if cl.timeout > 0 {
+		rqproto.Deadline = pb.Int64((time.Now().UnixNano() + cl.timeout.Nanoseconds()) / 1000)
 	}
 
 	if trace_dest != nil || (cx != nil && cx.GetTraceInfo() != nil) {
@@ -151,12 +155,14 @@ func (cl *Client) request(cx *server.Context, trace_dest *proto.TraceInfo, data 
 		return nil, RequestError{status: proto.RPCResponse_STATUS_CLIENT_REQUEST_ERROR, message: err.Error()}
 	}
 
-	// Store the received traceinfo in trace_dest and/or context (usually one of both)
-	if trace_dest != nil && respproto.GetTraceinfo() != nil {
-		*trace_dest = *respproto.GetTraceinfo()
+	if trace_dest != nil {
+		// Store the received traceinfo in trace_dest and/or context (usually one of both)
+		if respproto.GetTraceinfo() != nil {
+			*trace_dest = *respproto.GetTraceinfo()
+		}
 	}
 	if cx != nil {
-		cx.AppendCall(respproto.GetTraceinfo())
+		cx.AppendCallTrace(respproto.GetTraceinfo())
 	}
 
 	if respproto.GetResponseStatus() != proto.RPCResponse_STATUS_OK && respproto.GetResponseStatus() != proto.RPCResponse_STATUS_REDIRECT {

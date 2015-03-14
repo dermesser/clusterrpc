@@ -19,6 +19,7 @@ type Context struct {
 	redir_host                    string
 	redir_port                    uint
 	redir_service, redir_endpoint string
+	deadline                      time.Time
 	// Tracing info
 	this_call *proto.TraceInfo
 }
@@ -28,23 +29,27 @@ func (srv *Server) newContext(request *proto.RPCRequest) *Context {
 	c.input = request.GetData()
 	c.failed = false
 
+	if request.GetDeadline() > 0 {
+		c.deadline = time.Unix(0, 1000*request.GetDeadline())
+	}
+
 	if request.GetWantTrace() {
 		c.this_call = new(proto.TraceInfo)
 		c.this_call.EndpointName = pb.String(request.GetSrvc() + "." + request.GetProcedure())
 		c.this_call.MachineName = pb.String(srv.machine_name)
-		c.this_call.ReceivedTime = pb.Uint64(uint64(time.Now().UnixNano() / 1000))
+		c.this_call.ReceivedTime = pb.Int64(time.Now().UnixNano() / 1000)
 	}
 
 	return c
 }
 
-// For half-external use, e.g. by the client package
+// For half-external use, e.g. by the client package. Returns not nil when the current call tree is traced.
 func (c *Context) GetTraceInfo() *proto.TraceInfo {
 	return c.this_call
 }
 
-// Append call that was made
-func (c *Context) AppendCall(traceinfo *proto.TraceInfo) {
+// Append traceinfo from child call
+func (c *Context) AppendCallTrace(traceinfo *proto.TraceInfo) {
 	if traceinfo != nil {
 		c.this_call.ChildCalls = append(c.this_call.ChildCalls, traceinfo)
 	}
@@ -56,6 +61,13 @@ Get the data that was sent by the client.
 */
 func (c *Context) GetInput() []byte {
 	return c.input
+}
+
+/*
+Get the absolute deadline requested by the caller.
+*/
+func (c *Context) GetDeadline() time.Time {
+	return c.deadline
 }
 
 /*
@@ -97,12 +109,18 @@ func (cx *Context) toRPCResponse() *proto.RPCResponse {
 
 	if !cx.failed {
 		rpproto.ResponseStatus = proto.RPCResponse_STATUS_OK.Enum()
+		rpproto.ResponseData = cx.result
 	} else {
 		rpproto.ResponseStatus = proto.RPCResponse_STATUS_NOT_OK.Enum()
 		rpproto.ErrorMessage = pb.String(cx.error_message)
 	}
 
-	rpproto.ResponseData = cx.result
+	// Went over deadline
+	if cx.deadline.UnixNano() > 0 && time.Now().UnixNano() > cx.deadline.UnixNano() {
+		rpproto.ResponseData = []byte{}
+		rpproto.ResponseStatus = proto.RPCResponse_STATUS_MISSED_DEADLINE.Enum()
+		rpproto.ErrorMessage = pb.String("Missed deadline")
+	}
 
 	if cx.redirected {
 		rpproto.RedirHost = pb.String(cx.redir_host)
@@ -112,9 +130,10 @@ func (cx *Context) toRPCResponse() *proto.RPCResponse {
 		rpproto.ResponseStatus = proto.RPCResponse_STATUS_REDIRECT.Enum()
 
 	}
+
 	// Tracing enabled
 	if cx.this_call != nil {
-		cx.this_call.RepliedTime = pb.Uint64(uint64(time.Now().UnixNano() / 1000))
+		cx.this_call.RepliedTime = pb.Int64(time.Now().UnixNano() / 1000)
 
 		if cx.failed {
 			cx.this_call.ErrorMessage = pb.String(cx.error_message)

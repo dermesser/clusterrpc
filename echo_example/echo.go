@@ -63,6 +63,13 @@ func callingHandler(cx *server.Context) {
 		return
 	}
 
+	b, err = cl.RequestWithCtx(cx, []byte("xyz"), "EchoService", "Error")
+
+	if err != nil {
+		cx.Success([]byte("heyho :''("))
+		return
+	}
+
 	cx.Success(b)
 }
 

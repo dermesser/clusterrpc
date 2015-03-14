@@ -1,8 +1,8 @@
 package proto;
 
 message TraceInfo {
-    required uint64 received_time = 1;
-    required uint64 replied_time = 2;
+    required int64 received_time = 1;
+    required int64 replied_time = 2;
     optional string machine_name = 3;
     optional string endpoint_name = 4;
     optional string error_message = 5;
@@ -15,7 +15,8 @@ message RPCRequest {
     required string srvc = 2;
     required string procedure = 3;
     required bytes data = 4;
-    optional int64 deadline = 5; // UNIX timestamp after which we don't want to have an answer anymore
+    optional int64 deadline = 5; // UNIX µs timestamp after which we don't want to have an answer anymore
+                                 // (i.e. the server doesn't need to bother sending one)
     optional string caller_id = 6;
     optional bool want_trace = 7;
 }
@@ -49,6 +50,8 @@ message RPCResponse {
         // Client function called in a wrong way (e.g. different lengt of raddrs
         // and rports slices to NewClientRR())
         STATUS_CLIENT_CALLED_WRONG = 11;
+        // Timeout somewhere in the call stack
+        STATUS_MISSED_DEADLINE = 12;
     }
 
     optional string redir_host = 2;
