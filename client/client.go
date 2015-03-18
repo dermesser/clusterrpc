@@ -275,6 +275,10 @@ Use protobuf message objects instead of raw byte slices.
 request is the request protocol buffer which is to be sent, reply (an output argument) will contain the
 message the server sent as reply. Usually, pb.Message is implemented by pointer types, so this works
 without explicitly using pointer arguments.
+
+reply will only contain the response if the returned error is nil.
+
+For the other arguments, refer to the comments on plain Request()
 */
 func (cl *Client) RequestProtobuf(request, reply pb.Message, service, endpoint string, trace_dest *proto.TraceInfo) error {
 	serialized_request, err := pb.Marshal(request)
