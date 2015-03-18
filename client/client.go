@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	pb "github.com/golang/protobuf/proto"
 	zmq "github.com/pebbe/zmq4"
 )
 
@@ -266,4 +267,33 @@ in case a service wants to receive traces of the calls it issues.
 func (cl *Client) RequestWithCtxAndTrace(cx *server.Context, trace_dest *proto.TraceInfo, data []byte,
 	service, endpoint string) ([]byte, error) {
 	return cl.request(cx, trace_dest, data, service, endpoint, int(cl.eagain_retries))
+}
+
+/*
+Use protobuf message objects instead of raw byte slices.
+
+request is the request protocol buffer which is to be sent, reply (an output argument) will contain the
+message the server sent as reply. Usually, pb.Message is implemented by pointer types, so this works
+without explicitly using pointer arguments.
+*/
+func (cl *Client) RequestProtobuf(request, reply pb.Message, service, endpoint string, trace_dest *proto.TraceInfo) error {
+	serialized_request, err := pb.Marshal(request)
+
+	if err != nil {
+		return err
+	}
+
+	response_bytes, err := cl.request(nil, trace_dest, serialized_request, service, endpoint, int(cl.eagain_retries))
+
+	if err != nil {
+		return err
+	}
+
+	err = pb.Unmarshal(response_bytes, reply)
+
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
