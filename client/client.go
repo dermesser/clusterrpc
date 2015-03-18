@@ -297,3 +297,47 @@ func (cl *Client) RequestProtobuf(request, reply pb.Message, service, endpoint s
 
 	return nil
 }
+
+func (cl *Client) RequestProtobufWithCtx(cx *server.Context, request, reply pb.Message, service, endpoint string) error {
+	serialized_request, err := pb.Marshal(request)
+
+	if err != nil {
+		return err
+	}
+
+	response_bytes, err := cl.request(cx, nil, serialized_request, service, endpoint, int(cl.eagain_retries))
+
+	if err != nil {
+		return err
+	}
+
+	err = pb.Unmarshal(response_bytes, reply)
+
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (cl *Client) RequestProtobufWithCtxAndTrace(cx *server.Context, trace_dest *proto.TraceInfo, request, reply pb.Message, service, endpoint string) error {
+	serialized_request, err := pb.Marshal(request)
+
+	if err != nil {
+		return err
+	}
+
+	response_bytes, err := cl.request(cx, trace_dest, serialized_request, service, endpoint, int(cl.eagain_retries))
+
+	if err != nil {
+		return err
+	}
+
+	err = pb.Unmarshal(response_bytes, reply)
+
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
