@@ -116,6 +116,9 @@ func requestRedirect(raddr string, rport uint, service, endpoint string, request
 	// Close() is deferred
 }
 
+/*
+Prepare request and call Client.sendRequest() to send the request.
+*/
 func (cl *Client) request(cx *server.Context, trace_dest *proto.TraceInfo, data []byte,
 	service, endpoint string, retries int) ([]byte, error) {
 
@@ -135,7 +138,7 @@ func (cl *Client) request(cx *server.Context, trace_dest *proto.TraceInfo, data 
 	// Deadline from context has precedence.
 	if cx != nil {
 		rqproto.Deadline = pb.Int64(cx.GetDeadline().UnixNano() / 1000)
-	} else if cl.timeout > 0 {
+	} else if cl.deadline_propagation && cl.timeout > 0 {
 		rqproto.Deadline = pb.Int64((time.Now().UnixNano() + cl.timeout.Nanoseconds()) / 1000)
 	}
 
@@ -193,6 +196,9 @@ func (cl *Client) request(cx *server.Context, trace_dest *proto.TraceInfo, data 
 	return respproto.GetResponseData(), nil
 }
 
+/*
+Actually send and receive.
+*/
 func (cl *Client) sendRequest(rqproto *proto.RPCRequest, retries_left int) ([]byte, error) {
 	// cl is already locked
 

@@ -22,21 +22,24 @@ locks and blocks on any function call. It is probably important to know that the
 timeout is 10 seconds, which you might set to another value.
 */
 type Client struct {
+	lock    sync.Mutex
 	channel *zmq.Socket
 
 	logger   *log.Logger
 	loglevel clusterrpc.LOGLEVEL_T
 
 	name string
+
 	// Slices to allow multiple connections (round-robin)
 	raddr           []string
 	rport           []uint
 	sequence_number uint64
 	timeout         time.Duration
+
 	// Used for default calls
-	accept_redirect bool
-	lock            sync.Mutex
-	eagain_retries  uint
+	accept_redirect      bool
+	eagain_retries       uint
+	deadline_propagation bool
 }
 
 /*
@@ -79,6 +82,7 @@ func NewClientRR(client_name string, raddrs []string, rports []uint, loglevel cl
 	cl.accept_redirect = true
 	cl.eagain_retries = 2
 	cl.timeout = 4 * time.Second // makes 12 seconds as total timeout
+	cl.deadline_propagation = true
 
 	err := cl.createChannel()
 
@@ -127,6 +131,13 @@ func (cl *Client) SetRetries(n uint) {
 	defer cl.lock.Unlock()
 
 	cl.eagain_retries = n
+}
+
+/*
+Enable/Disable deadline propagation (default: enabled)
+*/
+func (cl *Client) SetDeadlinePropagation(on bool) {
+	cl.deadline_propagation = on
 }
 
 /*
