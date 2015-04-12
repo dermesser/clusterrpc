@@ -52,6 +52,8 @@ message RPCResponse {
         STATUS_CLIENT_CALLED_WRONG = 11;
         // Timeout somewhere in the call stack
         STATUS_MISSED_DEADLINE = 12;
+        // Loadshedding mode, not accepting requests right now
+        STATUS_LOADSHED = 13;
     }
 
     optional string redir_host = 2;

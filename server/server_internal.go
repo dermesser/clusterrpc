@@ -78,8 +78,21 @@ func (srv *Server) loadbalance() {
 						continue
 					}
 
-					// Try to find worker to send this request to
-					if worker_id := worker_queue.Front(); worker_id != nil {
+					if srv.loadshed_state { // Refuse request.
+						request := proto.RPCRequest{}
+						err = pb.Unmarshal(msgs[3], &request)
+
+						if err != nil {
+							if srv.loglevel >= clusterrpc.LOGLEVEL_WARNINGS { // Could not queue, drop
+								srv.logger.Println("Dropped message; could not decode")
+							}
+							continue
+						}
+
+						srv.sendError(srv.frontend_router, &request, proto.RPCResponse_STATUS_LOADSHED,
+							&workerRequest{client_id: msgs[0], request_id: msgs[1], data: msgs[3]})
+
+					} else if worker_id := worker_queue.Front(); worker_id != nil { // Find worker
 						_, err = srv.backend_router.SendMessage(worker_id.Value.([]byte), "", msgs) // [worker identity, "", client identity, "", RPCRequest]
 						worker_queue.Remove(worker_id)
 
@@ -114,28 +127,8 @@ func (srv *Server) loadbalance() {
 							continue
 						}
 
-						response := proto.RPCResponse{}
-						response.ResponseStatus = new(proto.RPCResponse_Status)
-						*response.ResponseStatus = proto.RPCResponse_STATUS_OVERLOADED_RETRY
-						response.ErrorMessage = pb.String("Could not accept request because our queue is full. Retry later")
-						response.SequenceNumber = pb.Uint64(request.GetSequenceNumber())
-
-						respproto, err := pb.Marshal(&response)
-
-						if err != nil {
-							if srv.loglevel >= clusterrpc.LOGLEVEL_WARNINGS { // Could not queue, drop
-								srv.logger.Println("Dropped message; no available workers, queue full")
-							}
-							continue
-						}
-
-						_, err = srv.frontend_router.SendMessage(msgs[0], "", respproto)
-
-						if err != nil {
-							if srv.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
-								srv.logger.Printf("Could not route message, identity %s, to frontend\n", msgs[0])
-							}
-						}
+						srv.sendError(srv.frontend_router, &request, proto.RPCResponse_STATUS_OVERLOADED_RETRY,
+							&workerRequest{client_id: msgs[0], request_id: msgs[1], data: msgs[3]})
 					}
 
 				case srv.backend_router:

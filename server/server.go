@@ -27,6 +27,10 @@ type Server struct {
 	loglevel     clusterrpc.LOGLEVEL_T
 	n_threads    int
 	machine_name string
+	// Respond "no" to healthchecks
+	lameduck_state bool
+	// Do not accept requests anymore
+	loadshed_state bool
 }
 
 /*
@@ -65,6 +69,8 @@ func NewServer(laddr string, port uint, worker_threads int, loglevel clusterrpc.
 		}
 		return nil
 	}
+
+	srv.RegisterHandler("Health", "Check", srv.makeHealthHandler())
 
 	var err error
 	srv.zmq_context, err = zmq.NewContext()
@@ -261,4 +267,19 @@ func (srv *Server) UnregisterHandler(svc, endpoint string) (err error) {
 	}
 
 	return
+}
+
+/*
+A server that is in lameduck mode will respond negatively to health checks
+but continue serving requests.
+*/
+func (srv *Server) SetLameduck(lameduck bool) {
+	srv.lameduck_state = lameduck
+}
+
+/*
+A server in loadshed mode will refuse any requests immediately.
+*/
+func (srv *Server) SetLoadshed(loadshed bool) {
+	srv.loadshed_state = loadshed
 }
