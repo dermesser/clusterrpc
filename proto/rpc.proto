@@ -54,6 +54,8 @@ message RPCResponse {
         STATUS_MISSED_DEADLINE = 12;
         // Loadshedding mode, not accepting requests right now
         STATUS_LOADSHED = 13;
+        // Health check failed
+        STATUS_UNHEALTHY = 14;
     }
 
     optional string redir_host = 2;
