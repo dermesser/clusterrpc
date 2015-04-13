@@ -9,9 +9,9 @@ import ()
 
 // Returns a handler function that returns OK and an empty body
 // iff the server is not in lameduck/loadshed mode, otherwise a NOT_OK status.
-func (srv *Server) makeHealthHandler() Handler {
+func makeHealthHandler(lameduck_state *bool) Handler {
 	return func(ctx *Context) {
-		if !srv.lameduck_state && !srv.loadshed_state {
+		if !*lameduck_state {
 			ctx.Success([]byte{})
 			return
 		} else {
