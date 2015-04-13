@@ -114,6 +114,7 @@ func Client() {
 	defer cl.Close()
 	cl.SetLoglevel(clusterrpc.LOGLEVEL_DEBUG)
 	cl.SetTimeout(5 * time.Second)
+	cl.SetHealthcheck(true)
 
 	trace_info := new(proto.TraceInfo)
 
