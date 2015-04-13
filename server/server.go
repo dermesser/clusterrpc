@@ -70,7 +70,7 @@ func NewServer(laddr string, port uint, worker_threads int, loglevel clusterrpc.
 		return nil
 	}
 
-	srv.RegisterHandler("Health", "Check", srv.makeHealthHandler())
+	srv.RegisterHandler("__HEALTH", "Check", srv.makeHealthHandler())
 
 	var err error
 	srv.zmq_context, err = zmq.NewContext()
