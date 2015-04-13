@@ -117,6 +117,24 @@ func requestRedirect(raddr string, rport uint, service, endpoint string, request
 }
 
 /*
+Request __HEALTH.Check and return true or false, respectively. If true is returned, the backend
+was reachable and did return a positive answer within the timeout. Otherwise there should be no further
+requests made.
+*/
+func (cl *Client) doHealthCheck(timeout time.Duration) bool {
+	_, err := cl.Request([]byte{}, "__HEALTH", "Check", nil)
+
+	if err == nil {
+		return true
+	} else {
+		if cl.loglevel >= clusterrpc.LOGLEVEL_WARNINGS {
+			cl.logger.Printf("RPC backend is unhealthy: %s\n", err.(*RequestError).Status())
+		}
+		return false
+	}
+}
+
+/*
 Prepare request and call Client.sendRequest() to send the request.
 */
 func (cl *Client) request(cx *server.Context, trace_dest *proto.TraceInfo, data []byte,
@@ -124,6 +142,16 @@ func (cl *Client) request(cx *server.Context, trace_dest *proto.TraceInfo, data 
 
 	cl.lock.Lock()
 	defer cl.lock.Unlock()
+
+	// Avoid recursion
+	if cl.do_healthcheck && service != "__HEALTH" {
+		cl.lock.Unlock()
+		result := cl.doHealthCheck(1 * time.Second)
+		cl.lock.Lock()
+		if !result {
+			return nil, RequestError{status: proto.RPCResponse_STATUS_UNHEALTHY, message: "RPC backend is not healthy"}
+		}
+	}
 
 	rqproto := proto.RPCRequest{}
 

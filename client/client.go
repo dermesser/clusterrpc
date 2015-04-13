@@ -41,6 +41,7 @@ type Client struct {
 	accept_redirect      bool
 	eagain_retries       uint
 	deadline_propagation bool
+	do_healthcheck       bool
 }
 
 /*
@@ -83,7 +84,7 @@ func NewClientRR(client_name string, raddrs []string, rports []uint, loglevel cl
 	cl.accept_redirect = true
 	cl.eagain_retries = 2
 	cl.timeout = 4 * time.Second // makes 12 seconds as total timeout
-	cl.deadline_propagation = true
+	cl.deadline_propagation = false
 
 	err := cl.createChannel()
 
@@ -160,6 +161,15 @@ func (cl *Client) SetTimeout(timeout time.Duration) {
 	cl.timeout = timeout
 	cl.channel.SetSndtimeo(timeout)
 	cl.channel.SetRcvtimeo(timeout)
+}
+
+/*
+When health checking is enabled, every request will only be made after getting a successful
+response from the server's health checking endpoint. This will of course result in decreased
+performance, but helps increasing reliability.
+*/
+func (cl *Client) SetHealthcheck(enabled bool) {
+	cl.do_healthcheck = enabled
 }
 
 /*

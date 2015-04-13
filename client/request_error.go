@@ -23,8 +23,11 @@ Returns one of
 	STATUS_CLIENT_REQUEST_ERROR (we failed to send or receive the request. Reason could be a Protobuf (de)serialization error, ...)
 	STATUS_CLIENT_NETWORK_ERROR (the socket returned an unrecoverable error; e.g. we could not send a request in the first place)
 	STATUS_CLIENT_CALLED_WRONG (a NewClientRR() call was made with host/port slices differing in length.
+	STATUS_MISSED_DEADLINE (the RPC server started processing the request after the deadline was already over)
+	STATUS_LOADSHED (the RPC server is not willing to request any more requests right now)
+	STATUS_UNHEALTHY (if health checking is enabled: The RPC server failed the health check)
 
-The original error message can be retrieved with Message().
+The original error message can be retrieved with Message(). Use the idiom err.(*RequestError).Status() to obtain the status string.
 
 */
 func (e *RequestError) Status() string {
