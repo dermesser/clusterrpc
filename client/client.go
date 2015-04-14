@@ -5,6 +5,7 @@ import (
 	"clusterrpc"
 	"clusterrpc/proto"
 	"clusterrpc/server"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -71,7 +72,7 @@ use-case might be a lookup or cache server.
 */
 func NewClientRR(client_name string, raddrs []string, rports []uint, loglevel clusterrpc.LOGLEVEL_T) (*Client, error) {
 	if len(raddrs) != len(rports) {
-		return nil, RequestError{status: proto.RPCResponse_STATUS_CLIENT_CALLED_WRONG, message: "raddrs and rports differ in length"}
+		return nil, RequestError{status: proto.RPCResponse_STATUS_CLIENT_CALLED_WRONG, err: errors.New("Mismatch between raddrs/rports lengths")}
 	}
 	cl := new(Client)
 	cl.logger = log.New(os.Stderr, "clusterrpc.Client: ", log.Lmicroseconds)
@@ -180,8 +181,12 @@ func (cl *Client) Close() {
 	cl.lock.Lock()
 	defer cl.lock.Unlock()
 
+	if cl.channel == nil {
+		return
+	}
+
 	if cl.loglevel >= clusterrpc.LOGLEVEL_INFO {
-		cl.logger.Println("Closing client channel")
+		cl.logger.Println("Closing client channel", cl.name)
 	}
 	cl.channel.Close()
 	cl.channel = nil

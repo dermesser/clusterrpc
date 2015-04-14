@@ -3,12 +3,16 @@ package client
 import "clusterrpc/proto"
 
 type RequestError struct {
-	status  proto.RPCResponse_Status
-	message string
+	status proto.RPCResponse_Status
+	err    error
 }
 
 func (e RequestError) Error() string {
-	return statusToString(e.status) + ": " + e.message
+	if e.err != nil {
+		return e.status.String() + ": " + e.err.Error()
+	} else {
+		return e.Status()
+	}
 }
 
 /*
@@ -31,7 +35,7 @@ The original error message can be retrieved with Message(). Use the idiom err.(*
 
 */
 func (e *RequestError) Status() string {
-	return statusToString(e.status)
+	return e.status.String()
 }
 
 /*
@@ -39,9 +43,5 @@ Returns a human-readable error message such as "error resource temporarily unava
 EAGAIN error)
 */
 func (e *RequestError) Message() string {
-	return e.message
-}
-
-func statusToString(s proto.RPCResponse_Status) string {
-	return proto.RPCResponse_Status_name[int32(s)]
+	return e.err.Error()
 }
