@@ -118,12 +118,12 @@ func requestRedirect(raddr string, rport uint, service, endpoint string, request
 }
 
 /*
-Request __HEALTH.Check and return true or false, respectively. If true is returned, the backend
+Request __CLUSTERRPC.Health and return true or false, respectively. If true is returned, the backend
 was reachable and did return a positive answer within the timeout. Otherwise there should be no further
 requests made.
 */
 func (cl *Client) doHealthCheck(timeout time.Duration) bool {
-	_, err := cl.Request([]byte{}, "__HEALTH", "Check", nil)
+	_, err := cl.Request([]byte{}, "__CLUSTERRPC", "Health", nil)
 
 	if err == nil {
 		return true
@@ -145,7 +145,7 @@ func (cl *Client) request(cx *server.Context, trace_dest *proto.TraceInfo, data 
 	defer cl.lock.Unlock()
 
 	// Avoid recursion
-	if cl.do_healthcheck && service != "__HEALTH" {
+	if cl.do_healthcheck && service != "__CLUSTERRPC" {
 		cl.lock.Unlock()
 		result := cl.doHealthCheck(1 * time.Second)
 		cl.lock.Lock()
