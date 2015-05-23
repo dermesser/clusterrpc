@@ -33,10 +33,13 @@ type Client struct {
 	name string
 
 	// Slices to allow multiple connections (round-robin)
-	raddr           []string
-	rport           []uint
+	raddr []string
+	rport []uint
+
 	sequence_number uint64
-	timeout         time.Duration
+
+	timeout   time.Duration
+	last_used time.Time
 
 	// Used for default calls
 	accept_redirect      bool
@@ -128,6 +131,9 @@ func (cl *Client) SetLoglevel(ll clusterrpc.LOGLEVEL_T) {
 
 /*
 How often should the client retry after encountering a timeout?
+
+IMPORTANT: Set this to 0 if your RPCs are not idempotent and you want to explicitly handle
+timeouts.
 */
 func (cl *Client) SetRetries(n uint) {
 	cl.lock.Lock()

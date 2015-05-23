@@ -136,7 +136,7 @@ func (cl *Client) doHealthCheck(timeout time.Duration) bool {
 }
 
 /*
-Prepare request and call Client.sendRequest() to send the request.
+Prepare request and call Client.sendRequest() to send the request. Internally used only.
 */
 func (cl *Client) request(cx *server.Context, trace_dest *proto.TraceInfo, data []byte,
 	service, endpoint string, retries int) ([]byte, error) {
@@ -180,6 +180,8 @@ func (cl *Client) request(cx *server.Context, trace_dest *proto.TraceInfo, data 
 	if err != nil {
 		return nil, err
 	}
+
+	cl.last_used = time.Now()
 
 	respproto := proto.RPCResponse{}
 
@@ -247,6 +249,7 @@ func (cl *Client) sendRequest(rqproto *proto.RPCRequest, retries_left int) ([]by
 			cl.logger.Printf("[%s/%d] Could not send message to %s. Error: %s\n", cl.name, rqproto.GetSequenceNumber(), rqproto.GetSrvc()+"."+rqproto.GetProcedure(), err.Error())
 		}
 		if err.(zmq.Errno) == 11 { // EAGAIN
+			// Handle send timeouts brutally
 			cl.createChannel()
 			return nil, RequestError{status: proto.RPCResponse_STATUS_TIMEOUT, err: err}
 		} else {
@@ -269,9 +272,9 @@ func (cl *Client) sendRequest(rqproto *proto.RPCRequest, retries_left int) ([]by
 				cl.logger.Printf("[%s/%d] Timeout occurred (EAGAIN); retrying\n", cl.name, rqproto.GetSequenceNumber())
 			}
 
-			// Reconnect if there is only one peer (otherwise send() times out b/c the peer
+			// Reconnect if there is only one peer (otherwise send() times out b/c the peer connection
 			// is removed from the set in the REQ socket)
-			if len(cl.raddr) == 1 {
+			if len(cl.raddr) < 2 {
 				cl.createChannel()
 			}
 
