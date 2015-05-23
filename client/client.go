@@ -262,7 +262,7 @@ load on a server if the client's request load is so high that it only can be man
 between multiple servers. If possible, avoid such clients.
 
 If trace_dest is not nil, a TraceInfo protobuf struct will be placed at the location the pointer
-points to. Tracing calls is however impacting performance slightly, so only a fraction of calls should
+points to. Tracing calls is however impacting performance negatively, so only a fraction of calls should
 be traced. The TraceInfo structure is essentially a tree of the calls made on behalf of this
 original call.
 */

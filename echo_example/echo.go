@@ -85,7 +85,14 @@ func redirectHandler(cx *server.Context) {
 }
 
 func Server() {
-	srv := server.NewServer(host, port, runtime.GOMAXPROCS(0), clusterrpc.LOGLEVEL_DEBUG) // don't set GOMAXPROCS if you want to test the loadbalancer (for correct queuing)
+	poolsize := runtime.GOMAXPROCS(0)
+
+	// minimum poolsize for some functions of this demo to work
+	if poolsize < 2 {
+		poolsize = 2
+	}
+
+	srv := server.NewServer(host, port, poolsize, clusterrpc.LOGLEVEL_DEBUG) // don't set GOMAXPROCS if you want to test the loadbalancer (for correct queuing)
 	srv.SetLoglevel(clusterrpc.LOGLEVEL_DEBUG)
 
 	hostname, err := os.Hostname()
@@ -102,6 +109,40 @@ func Server() {
 
 	if e != nil {
 		fmt.Println(e.Error())
+	}
+}
+
+func CachedClient() {
+	cc := client.NewConnCache("echo1_cc", clusterrpc.LOGLEVEL_DEBUG)
+
+	cl, err := cc.Connect(host, port)
+
+	if err != nil {
+		fmt.Println(err.Error())
+		return
+	}
+	cl.SetTimeout(5 * time.Second)
+	cl.SetHealthcheck(true)
+
+	cc.Return(&cl)
+
+	for i := 0; i < 5; i++ {
+		cl, err = cc.Connect(host, port)
+
+		if err != nil {
+			fmt.Println(err.Error())
+			return
+		}
+
+		resp, err := cl.Request([]byte("helloworld"), "EchoService", "Echo", nil)
+
+		if err != nil {
+			fmt.Println(err.Error())
+		} else {
+			fmt.Println("Received response:", string(resp), len(resp))
+		}
+
+		cc.Return(&cl)
 	}
 }
 
@@ -127,7 +168,7 @@ func Client() {
 	} else {
 		fmt.Println("Received response:", string(resp), len(resp))
 	}
-	/// Return an app error
+	/// Times out on first try, returns an app error after
 	resp, err = cl.Request([]byte("helloworld"), "EchoService", "Error", trace_info)
 	fmt.Println(client.FormatTraceInfo(trace_info, 0))
 
@@ -279,6 +320,7 @@ func main() {
 	if srv {
 		Server()
 	} else if cl {
+		CachedClient()
 		Client()
 	} else if acl {
 		Aclient()

@@ -22,8 +22,8 @@ type ConnectionCache struct {
 	mx sync.Mutex
 }
 
-func NewConnCache(client_name string, loglevel clusterrpc.LOGLEVEL_T) ConnectionCache {
-	return ConnectionCache{cache: make(map[string]*list.List),
+func NewConnCache(client_name string, loglevel clusterrpc.LOGLEVEL_T) *ConnectionCache {
+	return &ConnectionCache{cache: make(map[string]*list.List),
 		client_name: client_name, loglevel: loglevel}
 }
 
@@ -57,11 +57,14 @@ func (cc *ConnectionCache) Connect(host string, port uint) (*Client, error) {
 }
 
 /*
-Return a connection into the pool.
+Return a connection into the pool. Argument is a pointer to a pointer to make sure that the client
+is not used by the calling function after this call.
 */
-func (cc *ConnectionCache) Return(cl *Client) {
+func (cc *ConnectionCache) Return(clp **Client) {
 	cc.mx.Lock()
 	defer cc.mx.Unlock()
+
+	cl := *clp
 
 	// We only have one peer, so we can always use the first element.
 	cls, ok := cc.cache[cl.raddr[0]+fmt.Sprint(cl.rport[0])]
@@ -72,6 +75,7 @@ func (cc *ConnectionCache) Return(cl *Client) {
 	}
 
 	cls.PushBack(cl)
+	clp = nil
 }
 
 /*
