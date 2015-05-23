@@ -64,6 +64,13 @@ func (c *Context) GetInput() []byte {
 }
 
 /*
+GetArgument serializes the input in a protocol buffer message.
+*/
+func (c *Context) GetArgument(msg pb.Message) error {
+	return pb.Unmarshal(c.input, msg)
+}
+
+/*
 Get the absolute deadline requested by the caller.
 */
 func (c *Context) GetDeadline() time.Time {
@@ -100,8 +107,27 @@ func (c *Context) RedirectEndpoint(host string, port uint, service, endpoint str
 	c.redir_endpoint = endpoint
 }
 
+/*
+Set Success flag and the data to return to the caller.
+*/
 func (c *Context) Success(data []byte) {
 	c.result = data
+}
+
+/*
+Set Success flag and the message to return to the caller. Does not do anything special, such as
+terminate the calling function etc.
+*/
+func (c *Context) Return(msg pb.Message) error {
+	result, err := pb.Marshal(msg)
+
+	if err != nil {
+		return err
+	}
+
+	c.result = result
+
+	return nil
 }
 
 func (cx *Context) toRPCResponse() *proto.RPCResponse {
