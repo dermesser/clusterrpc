@@ -215,7 +215,7 @@ func (srv *Server) thread(n uint, spawn bool) error {
 
 	sock.SetSndtimeo(srv.timeout)
 
-	if !spawn {
+	if spawn {
 		go srv.acceptRequests(sock, worker_identity)
 	} else {
 		srv.acceptRequests(sock, worker_identity)

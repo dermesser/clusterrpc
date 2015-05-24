@@ -154,13 +154,13 @@ func (srv *Server) Start() error {
 
 	var i uint
 	for i = 0; i < srv.n_threads-1; i++ {
-		err := srv.thread(i, false)
+		err := srv.thread(i, true)
 
 		if err != nil {
 			return err
 		}
 	}
-	return srv.thread(srv.n_threads-1, true)
+	return srv.thread(srv.n_threads-1, false)
 }
 
 /*
