@@ -132,7 +132,7 @@ func (srv *Server) loadbalance() {
 					}
 
 				case srv.backend_router:
-					msgs, err := srv.backend_router.RecvMessageBytes(0) // 4 frames: [worker identity, "", client identity, request_id, "", RPCResponse]
+					msgs, err := srv.backend_router.RecvMessageBytes(0) // [worker identity, "", client identity, request_id, "", RPCResponse]
 
 					if err != nil {
 						if srv.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
@@ -140,7 +140,7 @@ func (srv *Server) loadbalance() {
 							continue
 						}
 					}
-					if len(msgs) != 6 { // We're expecting 4 frames, no less.
+					if len(msgs) != 6 {
 						if srv.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
 							srv.logger.Println("Error: Skipping message with other than 5 frames from backend;", len(msgs), "frames received")
 						}

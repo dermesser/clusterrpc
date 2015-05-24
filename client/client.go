@@ -78,7 +78,7 @@ func NewClientRR(client_name string, raddrs []string, rports []uint, loglevel cl
 		return nil, RequestError{status: proto.RPCResponse_STATUS_CLIENT_CALLED_WRONG, err: errors.New("Mismatch between raddrs/rports lengths")}
 	}
 	cl := new(Client)
-	cl.logger = log.New(os.Stderr, "clusterrpc.Client: ", log.Lmicroseconds)
+	cl.logger = log.New(os.Stderr, "clusterrpc.Client: ", log.LstdFlags|log.Lmicroseconds)
 
 	cl.sequence_number = 0
 	cl.loglevel = loglevel

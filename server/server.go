@@ -58,7 +58,7 @@ func NewServer(laddr string, port uint, worker_threads uint, loglevel clusterrpc
 
 	srv := new(Server)
 	srv.services = make(map[string]*service)
-	srv.logger = log.New(os.Stderr, "clusterrpc.Server: ", log.Lmicroseconds)
+	srv.logger = log.New(os.Stderr, "clusterrpc.Server: ", log.LstdFlags|log.Lmicroseconds)
 	srv.loglevel = loglevel
 	srv.n_threads = worker_threads
 	srv.timeout = time.Second * 3
