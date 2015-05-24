@@ -16,7 +16,7 @@ const BACKEND_ROUTER_PATH string = "inproc://rpc_backend_router"
 
 var MAGIC_READY_STRING []byte = []byte("___ReAdY___")
 
-const OUTSTANDING_REQUESTS_PER_THREAD int = 50
+const OUTSTANDING_REQUESTS_PER_THREAD uint = 50
 
 type workerRequest struct {
 	request_id, client_id, data []byte
@@ -103,7 +103,7 @@ func (srv *Server) loadbalance() {
 								srv.logger.Printf("Could not route message, identity %s, to frontend\n", msgs[0])
 							}
 						}
-					} else if todo_queue.Len() < srv.n_threads*OUTSTANDING_REQUESTS_PER_THREAD { // We're only allowing so many queued requests to prevent from complete overloading
+					} else if uint(todo_queue.Len()) < srv.n_threads*OUTSTANDING_REQUESTS_PER_THREAD { // We're only allowing so many queued requests to prevent from complete overloading
 						todo_queue.PushBack(msgs)
 
 						if srv.loglevel >= clusterrpc.LOGLEVEL_WARNINGS &&
@@ -184,7 +184,7 @@ func (srv *Server) loadbalance() {
 
 // Start a single worker thread; spawn a goroutine if spawn == true. Otherwise, execute in the current thread.
 // This thread will later execute the registered handlers.
-func (srv *Server) thread(n int, spawn bool) error {
+func (srv *Server) thread(n uint, spawn bool) error {
 	// Yes, we're using a REQ socket for the worker
 	// see http://zguide.zeromq.org/page:all#toc72
 	sock, err := srv.zmq_context.NewSocket(zmq.REQ)

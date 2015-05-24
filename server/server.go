@@ -25,7 +25,7 @@ type Server struct {
 	// The timeout only applies on client connections (R/W), not the Listener
 	timeout      time.Duration
 	loglevel     clusterrpc.LOGLEVEL_T
-	n_threads    int
+	n_threads    uint
 	machine_name string
 	// Respond "no" to healthchecks
 	lameduck_state bool
@@ -54,7 +54,7 @@ Use the setter functions described below before calling Start(), otherwise they 
 be ignored.
 
 */
-func NewServer(laddr string, port uint, worker_threads int, loglevel clusterrpc.LOGLEVEL_T) (srv *Server) {
+func NewServer(laddr string, port uint, worker_threads uint, loglevel clusterrpc.LOGLEVEL_T) (srv *Server) {
 
 	srv = new(Server)
 	srv.services = make(map[string]*service)
@@ -152,7 +152,8 @@ otherwise nil. The error is logged at any LOGLEVEL.
 */
 func (srv *Server) Start() error {
 
-	for i := 0; i < srv.n_threads-1; i++ {
+	var i uint
+	for i = 0; i < srv.n_threads-1; i++ {
 		err := srv.thread(i, false)
 
 		if err != nil {
