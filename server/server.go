@@ -54,9 +54,9 @@ Use the setter functions described below before calling Start(), otherwise they 
 be ignored.
 
 */
-func NewServer(laddr string, port uint, worker_threads uint, loglevel clusterrpc.LOGLEVEL_T) (srv *Server) {
+func NewServer(laddr string, port uint, worker_threads uint, loglevel clusterrpc.LOGLEVEL_T) (*Server, error) {
 
-	srv = new(Server)
+	srv := new(Server)
 	srv.services = make(map[string]*service)
 	srv.logger = log.New(os.Stderr, "clusterrpc.Server: ", log.Lmicroseconds)
 	srv.loglevel = loglevel
@@ -67,7 +67,7 @@ func NewServer(laddr string, port uint, worker_threads uint, loglevel clusterrpc
 		if srv.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
 			srv.logger.Println("Number of threads must be 1 or higher")
 		}
-		return nil
+		return nil, errors.New("Number of threads must be 1 or higher")
 	}
 
 	srv.RegisterHandler("__CLUSTERRPC", "Health", makeHealthHandler(&srv.lameduck_state))
@@ -79,7 +79,7 @@ func NewServer(laddr string, port uint, worker_threads uint, loglevel clusterrpc
 		if srv.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
 			srv.logger.Println("Error when creating context:", err.Error())
 		}
-		return nil
+		return nil, err
 	}
 
 	srv.frontend_router, err = srv.zmq_context.NewSocket(zmq.ROUTER)
@@ -88,7 +88,7 @@ func NewServer(laddr string, port uint, worker_threads uint, loglevel clusterrpc
 		if srv.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
 			srv.logger.Println("Error when creating Router socket:", err.Error())
 		}
-		return nil
+		return nil, err
 	}
 
 	srv.frontend_router.SetIpv6(true)
@@ -97,7 +97,7 @@ func NewServer(laddr string, port uint, worker_threads uint, loglevel clusterrpc
 		if srv.loglevel >= clusterrpc.LOGLEVEL_WARNINGS {
 			srv.logger.Println("Could not enable IPv6 on frontend router:", err.Error())
 		}
-		return nil
+		return nil, err
 	}
 
 	srv.frontend_router.SetRouterMandatory(1)
@@ -114,7 +114,7 @@ func NewServer(laddr string, port uint, worker_threads uint, loglevel clusterrpc
 		if srv.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
 			srv.logger.Println("Error when binding Router socket:", err.Error())
 		}
-		return nil
+		return nil, err
 	}
 
 	srv.backend_router, err = srv.zmq_context.NewSocket(zmq.ROUTER)
@@ -124,7 +124,7 @@ func NewServer(laddr string, port uint, worker_threads uint, loglevel clusterrpc
 			srv.logger.Println("Error when creating backend router socket:", err.Error())
 		}
 		srv = nil
-		return
+		return nil, err
 	}
 
 	err = srv.backend_router.Bind(BACKEND_ROUTER_PATH)
@@ -134,7 +134,7 @@ func NewServer(laddr string, port uint, worker_threads uint, loglevel clusterrpc
 			srv.logger.Println("Error when binding backend router socket:", err.Error())
 		}
 		srv = nil
-		return
+		return nil, err
 	}
 
 	srv.backend_router.SetRouterMandatory(1)
@@ -143,7 +143,7 @@ func NewServer(laddr string, port uint, worker_threads uint, loglevel clusterrpc
 
 	go srv.loadbalance()
 
-	return
+	return srv, nil
 }
 
 /*

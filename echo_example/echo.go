@@ -85,14 +85,19 @@ func redirectHandler(cx *server.Context) {
 }
 
 func Server() {
-	poolsize := runtime.GOMAXPROCS(0)
+	poolsize := uint(runtime.GOMAXPROCS(0))
 
 	// minimum poolsize for some functions of this demo to work
 	if poolsize < 2 {
 		poolsize = 2
 	}
 
-	srv := server.NewServer(host, port, poolsize, clusterrpc.LOGLEVEL_DEBUG) // don't set GOMAXPROCS if you want to test the loadbalancer (for correct queuing)
+	srv, err := server.NewServer(host, port, poolsize, clusterrpc.LOGLEVEL_DEBUG) // don't set GOMAXPROCS if you want to test the loadbalancer (for correct queuing)
+
+	if err != nil {
+		return
+	}
+
 	srv.SetLoglevel(clusterrpc.LOGLEVEL_DEBUG)
 
 	hostname, err := os.Hostname()
@@ -242,7 +247,19 @@ func Aclient() {
 }
 
 func benchServer() {
-	srv := server.NewServer(host, port, runtime.GOMAXPROCS(0), clusterrpc.LOGLEVEL_WARNINGS)
+	poolsize := uint(runtime.GOMAXPROCS(0))
+
+	// minimum poolsize for some functions of this demo to work
+	if poolsize < 2 {
+		poolsize = 2
+	}
+
+	srv, err := server.NewServer(host, port, poolsize, clusterrpc.LOGLEVEL_WARNINGS)
+
+	if err != nil {
+		return
+	}
+
 	srv.SetLoglevel(clusterrpc.LOGLEVEL_ERRORS)
 	srv.RegisterHandler("EchoService", "Echo", silentEchoHandler)
 
