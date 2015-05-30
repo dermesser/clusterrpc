@@ -7,7 +7,7 @@ type RequestError struct {
 	err    error
 }
 
-func (e RequestError) Error() string {
+func (e *RequestError) Error() string {
 	if e.err != nil {
 		return e.status.String() + ": " + e.err.Error()
 	} else {

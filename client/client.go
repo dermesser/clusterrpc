@@ -71,11 +71,12 @@ Use this only with fast (so you can set a very low timeout), stateless services 
 and only with ones that time out (or fail) rarely (a reconnect to one peer as with a Client
 returned by NewClient() is cheaper than reconnecting to possibly dozens of servers). A typical
 use-case might be a lookup or cache server.
+use-case might be a lookup or cache server.
 
 */
 func NewClientRR(client_name string, raddrs []string, rports []uint, loglevel clusterrpc.LOGLEVEL_T) (*Client, error) {
 	if len(raddrs) != len(rports) {
-		return nil, RequestError{status: proto.RPCResponse_STATUS_CLIENT_CALLED_WRONG, err: errors.New("Mismatch between raddrs/rports lengths")}
+		return nil, &RequestError{status: proto.RPCResponse_STATUS_CLIENT_CALLED_WRONG, err: errors.New("Mismatch between raddrs/rports lengths")}
 	}
 	cl := new(Client)
 	cl.logger = log.New(os.Stderr, "clusterrpc.Client: ", log.LstdFlags|log.Lmicroseconds)
@@ -242,11 +243,11 @@ func FormatTraceInfo(ti *proto.TraceInfo, indent int) string {
 /*
 Call a remote procedure service.endpoint with data as input.
 
-Returns either a byte slice and nil or an undefined byte slice and a clusterrpc.RequestError
+Returns either a byte slice and nil or an undefined byte slice and a *clusterrpc.RequestError
 (wrapped in an error interface value, of course). You can use RequestError's Status() method
 to get a status string such as STATUS_NOT_FOUND.
 
-When not being able to get a response after a timeout, we return a RequestError where
+When not being able to get a response after a timeout, we return a *RequestError where
 rqerr.Status() == "STATUS_TIMEOUT". This is probably due to a completely overloaded server,
 a crashed server or a netsplit. There is no automatic re-sending requests if receiving has failed,
 only if sending was not successful. This decreases the probability of two RPCs just because one server
