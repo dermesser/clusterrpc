@@ -139,7 +139,7 @@ func (cl *Client) doHealthCheck(timeout time.Duration) bool {
 Prepare request and call Client.sendRequest() to send the request. Internally used only.
 */
 func (cl *Client) request(cx *server.Context, trace_dest *proto.TraceInfo, data []byte,
-	service, endpoint string, retries int) ([]byte, error) {
+	service, endpoint string) ([]byte, error) {
 
 	cl.lock.Lock()
 	defer cl.lock.Unlock()
@@ -175,7 +175,7 @@ func (cl *Client) request(cx *server.Context, trace_dest *proto.TraceInfo, data 
 		rqproto.WantTrace = pb.Bool(true)
 	}
 
-	msg, err := cl.sendRequest(&rqproto, retries)
+	msg, err := cl.sendRequest(&rqproto)
 
 	if err != nil {
 		return nil, err
@@ -230,7 +230,7 @@ func (cl *Client) request(cx *server.Context, trace_dest *proto.TraceInfo, data 
 /*
 Actually send and receive.
 */
-func (cl *Client) sendRequest(rqproto *proto.RPCRequest, retries_left int) ([]byte, error) {
+func (cl *Client) sendRequest(rqproto *proto.RPCRequest) ([]byte, error) {
 	// cl is already locked
 
 	rq_serialized, pberr := pb.Marshal(rqproto)
@@ -242,22 +242,39 @@ func (cl *Client) sendRequest(rqproto *proto.RPCRequest, retries_left int) ([]by
 		return nil, RequestError{status: proto.RPCResponse_STATUS_CLIENT_REQUEST_ERROR, err: pberr}
 	}
 
-	_, err := cl.channel.SendBytes(rq_serialized, 0)
+	for i := cl.eagain_retries; i >= 0; i-- {
+		_, err := cl.channel.SendBytes(rq_serialized, 0)
 
-	if err != nil {
-		if cl.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
-			cl.logger.Printf("[%s/%d] Could not send message to %s. Error: %s\n", cl.name, rqproto.GetSequenceNumber(), rqproto.GetSrvc()+"."+rqproto.GetProcedure(), err.Error())
-		}
-		if err.(zmq.Errno) == 11 { // EAGAIN
-			// Handle send timeouts brutally
-			cl.createChannel()
-			return nil, RequestError{status: proto.RPCResponse_STATUS_TIMEOUT, err: err}
+		if err != nil {
+			if cl.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
+				cl.logger.Printf("[%s/%d] Could not send message to %s. Error: %s\n", cl.name, rqproto.GetSequenceNumber(), rqproto.GetSrvc()+"."+rqproto.GetProcedure(), err.Error())
+			}
+			if err.(zmq.Errno) == 11 { // EAGAIN
+
+				if len(cl.raddr) < 2 {
+					cl.createChannel()
+				}
+
+				if i > 0 {
+					continue
+				}
+
+				return nil, RequestError{status: proto.RPCResponse_STATUS_TIMEOUT, err: err}
+			} else {
+				if len(cl.raddr) < 2 {
+					cl.createChannel()
+				}
+
+				if i > 0 {
+					continue
+				}
+				return nil, RequestError{status: proto.RPCResponse_STATUS_CLIENT_NETWORK_ERROR, err: err}
+			}
 		} else {
-			return nil, RequestError{status: proto.RPCResponse_STATUS_CLIENT_NETWORK_ERROR, err: err}
-		}
-	} else {
-		if cl.loglevel >= clusterrpc.LOGLEVEL_DEBUG {
-			cl.logger.Printf("[%s/%d] Sent request to %s\n", cl.name, rqproto.GetSequenceNumber(), rqproto.GetSrvc()+"."+rqproto.GetProcedure())
+			if cl.loglevel >= clusterrpc.LOGLEVEL_DEBUG {
+				cl.logger.Printf("[%s/%d] Sent request to %s\n", cl.name, rqproto.GetSequenceNumber(), rqproto.GetSrvc()+"."+rqproto.GetProcedure())
+			}
+			break
 		}
 	}
 
@@ -267,26 +284,12 @@ func (cl *Client) sendRequest(rqproto *proto.RPCRequest, retries_left int) ([]by
 		if cl.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
 			cl.logger.Printf("[%s/%d] Could not receive response from %s, error %s\n", cl.name, rqproto.GetSequenceNumber(), rqproto.GetSrvc()+"."+rqproto.GetProcedure(), err.Error())
 		}
-		if 11 == uint32(err.(zmq.Errno)) && retries_left > 0 { // 11 == EAGAIN
-			if cl.loglevel >= clusterrpc.LOGLEVEL_WARNINGS {
-				cl.logger.Printf("[%s/%d] Timeout occurred (EAGAIN); retrying\n", cl.name, rqproto.GetSequenceNumber())
-			}
-
+		if 11 == err.(zmq.Errno) { // We have no retries left.
 			// Reconnect if there is only one peer (otherwise send() times out b/c the peer connection
 			// is removed from the set in the REQ socket)
 			if len(cl.raddr) < 2 {
 				cl.createChannel()
 			}
-
-			msg, next_err := cl.sendRequest(rqproto, retries_left-1)
-
-			if next_err != nil {
-				return nil, next_err
-			} else {
-				return msg, nil
-			}
-
-		} else if 11 == uint32(err.(zmq.Errno)) { // We have no retries left.
 			if cl.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
 				cl.logger.Printf("[%s/%d] Timeout occurred, retries failed. Giving up\n", cl.name, rqproto.GetSequenceNumber())
 			}

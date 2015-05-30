@@ -63,9 +63,9 @@ func NewClient(client_name, raddr string, rport uint, loglevel clusterrpc.LOGLEV
 }
 
 /*
-Send requests in a round-robin manner to the given servers. If one of the servers doesn't respond,
-it is taken out of the set of servers being queried. It is recommended to re-connect the client
-regularly to prevent overloading one server (because servers don't necessarily re-join the pool)
+Create client that sends requests in a round-robin manner to the given servers. If one of the servers
+doesn't respond, it is taken out of the set of servers being queried. It is recommended to re-connect
+the client regularly to prevent overloading one server (because servers don't necessarily re-join the pool)
 
 Use this only with fast (so you can set a very low timeout), stateless services (because of round-robin),
 and only with ones that time out (or fail) rarely (a reconnect to one peer as with a Client
@@ -86,8 +86,8 @@ func NewClientRR(client_name string, raddrs []string, rports []uint, loglevel cl
 	cl.raddr = raddrs
 	cl.rport = rports
 	cl.accept_redirect = true
-	cl.eagain_retries = 2
-	cl.timeout = 4 * time.Second // makes 12 seconds as total timeout
+	cl.eagain_retries = 0
+	cl.timeout = 4 * time.Second
 	cl.deadline_propagation = false
 
 	err := cl.createChannel()
@@ -246,9 +246,11 @@ Returns either a byte slice and nil or an undefined byte slice and a clusterrpc.
 (wrapped in an error interface value, of course). You can use RequestError's Status() method
 to get a status string such as STATUS_NOT_FOUND.
 
-When not being able to get a response after a timeout (and n reattempts, where n has been set using
-SetRetries()), we return a RequestError where rqerr.Status() == "STATUS_TIMEOUT". This is probably
-due to a completely overloaded server, a crashed server or a netsplit.
+When not being able to get a response after a timeout, we return a RequestError where
+rqerr.Status() == "STATUS_TIMEOUT". This is probably due to a completely overloaded server,
+a crashed server or a netsplit. There is no automatic re-sending requests if receiving has failed,
+only if sending was not successful. This decreases the probability of two RPCs just because one server
+was slow.
 
 There's something to pay attention to when dealing with multiple servers (NewClientRR()); if one server
 becomes unresponsive (i.e. the attempt to receive a response timed out), the client makes another attempt
@@ -267,7 +269,7 @@ be traced. The TraceInfo structure is essentially a tree of the calls made on be
 original call.
 */
 func (cl *Client) Request(data []byte, service, endpoint string, trace_dest *proto.TraceInfo) ([]byte, error) {
-	return cl.request(nil, trace_dest, data, service, endpoint, int(cl.eagain_retries))
+	return cl.request(nil, trace_dest, data, service, endpoint)
 }
 
 /*
@@ -278,7 +280,7 @@ It is recommended to use this in handlers, as plain Request() will not carry imp
 call information and make traces and deadline propagation completely unavailable.
 */
 func (cl *Client) RequestWithCtx(cx *server.Context, data []byte, service, endpoint string) ([]byte, error) {
-	return cl.request(cx, nil, data, service, endpoint, int(cl.eagain_retries))
+	return cl.request(cx, nil, data, service, endpoint)
 }
 
 /*
@@ -287,7 +289,7 @@ in case a service wants to receive traces of the calls it issues.
 */
 func (cl *Client) RequestWithCtxAndTrace(cx *server.Context, trace_dest *proto.TraceInfo, data []byte,
 	service, endpoint string) ([]byte, error) {
-	return cl.request(cx, trace_dest, data, service, endpoint, int(cl.eagain_retries))
+	return cl.request(cx, trace_dest, data, service, endpoint)
 }
 
 /*
@@ -308,7 +310,7 @@ func (cl *Client) RequestProtobuf(request, reply pb.Message, service, endpoint s
 		return err
 	}
 
-	response_bytes, err := cl.request(nil, trace_dest, serialized_request, service, endpoint, int(cl.eagain_retries))
+	response_bytes, err := cl.request(nil, trace_dest, serialized_request, service, endpoint)
 
 	if err != nil {
 		return err
@@ -330,7 +332,7 @@ func (cl *Client) RequestProtobufWithCtx(cx *server.Context, request, reply pb.M
 		return err
 	}
 
-	response_bytes, err := cl.request(cx, nil, serialized_request, service, endpoint, int(cl.eagain_retries))
+	response_bytes, err := cl.request(cx, nil, serialized_request, service, endpoint)
 
 	if err != nil {
 		return err
@@ -352,7 +354,7 @@ func (cl *Client) RequestProtobufWithCtxAndTrace(cx *server.Context, trace_dest 
 		return err
 	}
 
-	response_bytes, err := cl.request(cx, trace_dest, serialized_request, service, endpoint, int(cl.eagain_retries))
+	response_bytes, err := cl.request(cx, trace_dest, serialized_request, service, endpoint)
 
 	if err != nil {
 		return err

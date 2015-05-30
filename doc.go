@@ -26,15 +26,14 @@ requests per second (with 35 bytes of payload) and 6850 requests per second (1 b
 not good, but also not bad, given the relatively complex routing and load balancing structure (which
 supports stability and scalability, also in the face of more complex workloads).
 The server scales with the number of processes (client and server with both GOMAXPROCS=2 reached 7900 RPS,
-10500 RPS with server's GOMAXPROCS=4). If client and server run both with 12 processes, 21400 QPS were achieved.
+10500 RPS with server's GOMAXPROCS=4). If client and server run both with 12 processes, 25000QPS were achieved.
 
 When trying to find a good number of threads, keep in mind that one server process runs at least
 three threads: One ZeroMQ networking thread (capable of roughly 1 GB/s, according to ZeroMQ documentation),
 one load-balancing thread (shuffling messages between the frontend socket and the worker threads) and
-finally (of course) one worker thread. Load-balancer and networking thread are usually not as heavily
-used, so they don't need dedicated cores. However, you probably shouldn't use more workers than cores
-in your machine, except n_cores == 1, then two might be better, in case the workers are doing
-blocking operations (if they do so very frequently, an even higher number can be useful).
+finally (of course) one worker thread. The load-balancer is usually the hottest thread, so calculate one core
+for it. You probably shouldn't use more workers than cores in your machine, except when the workers
+are doing blocking operations, then up to ten workers per core or even more make sense.
 
 */
 package clusterrpc
