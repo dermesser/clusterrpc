@@ -79,8 +79,8 @@ func (srv *Server) loadbalance() {
 					}
 
 					if srv.loadshed_state { // Refuse request.
-						request := proto.RPCRequest{}
-						err = pb.Unmarshal(msgs[3], &request)
+						request := &proto.RPCRequest{}
+						err = request.Unmarshal(msgs[3])
 
 						if err != nil {
 							if srv.loglevel >= clusterrpc.LOGLEVEL_WARNINGS { // Could not queue, drop
@@ -89,7 +89,7 @@ func (srv *Server) loadbalance() {
 							continue
 						}
 
-						srv.sendError(srv.frontend_router, &request, proto.RPCResponse_STATUS_LOADSHED,
+						srv.sendError(srv.frontend_router, request, proto.RPCResponse_STATUS_LOADSHED,
 							&workerRequest{client_id: msgs[0], request_id: msgs[1], data: msgs[3]})
 
 					} else if worker_id := worker_queue.Front(); worker_id != nil { // Find worker
@@ -117,8 +117,8 @@ func (srv *Server) loadbalance() {
 						}
 					} else {
 						// Maybe just drop silently -- this costs CPU!
-						request := proto.RPCRequest{}
-						err = pb.Unmarshal(msgs[3], &request)
+						request := &proto.RPCRequest{}
+						err = request.Unmarshal(msgs[3])
 
 						if err != nil {
 							if srv.loglevel >= clusterrpc.LOGLEVEL_WARNINGS { // Could not queue, drop
@@ -127,7 +127,7 @@ func (srv *Server) loadbalance() {
 							continue
 						}
 
-						srv.sendError(srv.frontend_router, &request, proto.RPCResponse_STATUS_OVERLOADED_RETRY,
+						srv.sendError(srv.frontend_router, request, proto.RPCResponse_STATUS_OVERLOADED_RETRY,
 							&workerRequest{client_id: msgs[0], request_id: msgs[1], data: msgs[3]})
 					}
 
@@ -228,6 +228,7 @@ func (srv *Server) acceptRequests(sock *zmq.Socket, worker_identity string) erro
 
 	// Send bogus parts so we have the correct number of frames in this message. (doesn't impact performance)
 	sock.SendMessage("___BOGUS_CLIENT_ID", "__BOGUS_REQ_ID", "", MAGIC_READY_STRING)
+
 	for {
 		// We're getting here the following message parts: [client_identity, data]
 		msgs, err := sock.RecvMessageBytes(0)
