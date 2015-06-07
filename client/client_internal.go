@@ -183,9 +183,9 @@ func (cl *Client) request(cx *server.Context, trace_dest *proto.TraceInfo, data 
 
 	cl.last_used = time.Now()
 
-	respproto := proto.RPCResponse{}
+	respproto := &proto.RPCResponse{}
 
-	err = pb.Unmarshal(msg, &respproto)
+	err = respproto.Unmarshal(msg)
 
 	if err != nil {
 		if cl.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
@@ -233,7 +233,7 @@ Actually send and receive.
 func (cl *Client) sendRequest(rqproto *proto.RPCRequest) ([]byte, error) {
 	// cl is already locked
 
-	rq_serialized, pberr := pb.Marshal(rqproto)
+	rq_serialized, pberr := rqproto.Marshal()
 
 	if pberr != nil {
 		if cl.loglevel >= clusterrpc.LOGLEVEL_WARNINGS {
