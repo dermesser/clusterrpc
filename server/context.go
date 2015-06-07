@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	pb "github.com/golang/protobuf/proto"
+	pb "github.com/gogo/protobuf/proto"
 )
 
 /*
