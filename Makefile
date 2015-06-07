@@ -12,5 +12,5 @@ bench:
 	go test -bench .
 
 protos:
-	protoc --go_out=. proto/rpc.proto
+	protoc --gogofast_out=. proto/rpc.proto
 
