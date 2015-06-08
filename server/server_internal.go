@@ -311,7 +311,7 @@ func (srv *Server) handleRequest(request *workerRequest, sock *zmq.Socket) {
 			rpproto := cx.toRPCResponse()
 			rpproto.SequenceNumber = pb.Uint64(rqproto.GetSequenceNumber())
 
-			response_serialized, pberr := pb.Marshal(rpproto)
+			response_serialized, pberr := rpproto.Marshal()
 
 			if pberr != nil {
 				srv.sendError(sock, rqproto, proto.RPCResponse_STATUS_SERVER_ERROR, request)
