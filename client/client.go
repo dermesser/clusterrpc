@@ -131,10 +131,9 @@ func (cl *Client) SetLoglevel(ll clusterrpc.LOGLEVEL_T) {
 }
 
 /*
-How often should the client retry after encountering a timeout?
+How often should the client retry after encountering a SEND (!) timeout?
 
-IMPORTANT: Set this to 0 if your RPCs are not idempotent and you want to explicitly handle
-timeouts.
+If a RECEIVE operation times out, clusterrpc will not retry the call!
 */
 func (cl *Client) SetRetries(n uint) {
 	cl.lock.Lock()
