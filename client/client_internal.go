@@ -4,7 +4,6 @@ import (
 	"clusterrpc"
 	"clusterrpc/proto"
 	"clusterrpc/server"
-	"errors"
 	"fmt"
 	"time"
 
@@ -122,8 +121,8 @@ Request __CLUSTERRPC.Health and return true or false, respectively. If true is r
 was reachable and did return a positive answer within the timeout. Otherwise there should be no further
 requests made.
 */
-func (cl *Client) doHealthCheck(timeout time.Duration) bool {
-	_, err := cl.Request([]byte{}, "__CLUSTERRPC", "Health", nil)
+func (cl *Client) doHealthCheck() bool {
+	_, err := cl.request(nil, nil, []byte{}, "__CLUSTERRPC", "Health")
 
 	if err == nil {
 		return true
@@ -143,16 +142,6 @@ func (cl *Client) request(cx *server.Context, trace_dest *proto.TraceInfo, data 
 
 	cl.lock.Lock()
 	defer cl.lock.Unlock()
-
-	// Avoid recursion
-	if cl.do_healthcheck && service != "__CLUSTERRPC" {
-		cl.lock.Unlock()
-		result := cl.doHealthCheck(1 * time.Second)
-		cl.lock.Lock()
-		if !result {
-			return nil, &RequestError{status: proto.RPCResponse_STATUS_UNHEALTHY, err: errors.New("RPC backend unhealthy")}
-		}
-	}
 
 	rqproto := proto.RPCRequest{}
 

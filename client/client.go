@@ -240,6 +240,13 @@ func FormatTraceInfo(ti *proto.TraceInfo, indent int) string {
 }
 
 /*
+Send a request to the backend and check if it responds in time, i.e. whether it's healthy or not.
+*/
+func (cl *Client) IsHealthy() bool {
+	return cl.doHealthCheck()
+}
+
+/*
 Call a remote procedure service.endpoint with data as input.
 
 Returns either a byte slice and nil or an undefined byte slice and a *clusterrpc.RequestError
@@ -269,6 +276,13 @@ be traced. The TraceInfo structure is essentially a tree of the calls made on be
 original call.
 */
 func (cl *Client) Request(data []byte, service, endpoint string, trace_dest *proto.TraceInfo) ([]byte, error) {
+
+	if cl.do_healthcheck {
+		result := cl.doHealthCheck()
+		if !result {
+			return nil, &RequestError{status: proto.RPCResponse_STATUS_UNHEALTHY, err: errors.New("RPC backend unhealthy")}
+		}
+	}
 	return cl.request(nil, trace_dest, data, service, endpoint)
 }
 
@@ -280,6 +294,14 @@ It is recommended to use this in handlers, as plain Request() will not carry imp
 call information and make traces and deadline propagation completely unavailable.
 */
 func (cl *Client) RequestWithCtx(cx *server.Context, data []byte, service, endpoint string) ([]byte, error) {
+
+	if cl.do_healthcheck {
+		result := cl.doHealthCheck()
+		if !result {
+			return nil, &RequestError{status: proto.RPCResponse_STATUS_UNHEALTHY, err: errors.New("RPC backend unhealthy")}
+		}
+	}
+
 	return cl.request(cx, nil, data, service, endpoint)
 }
 
@@ -289,6 +311,14 @@ in case a service wants to receive traces of the calls it issues.
 */
 func (cl *Client) RequestWithCtxAndTrace(cx *server.Context, trace_dest *proto.TraceInfo, data []byte,
 	service, endpoint string) ([]byte, error) {
+
+	if cl.do_healthcheck {
+		result := cl.doHealthCheck()
+		if !result {
+			return nil, &RequestError{status: proto.RPCResponse_STATUS_UNHEALTHY, err: errors.New("RPC backend unhealthy")}
+		}
+	}
+
 	return cl.request(cx, trace_dest, data, service, endpoint)
 }
 
@@ -304,6 +334,14 @@ reply will only contain the response if the returned error is nil.
 For the other arguments, refer to the comments on plain Request()
 */
 func (cl *Client) RequestProtobuf(request, reply pb.Message, service, endpoint string, trace_dest *proto.TraceInfo) error {
+
+	if cl.do_healthcheck {
+		result := cl.doHealthCheck()
+		if !result {
+			return &RequestError{status: proto.RPCResponse_STATUS_UNHEALTHY, err: errors.New("RPC backend unhealthy")}
+		}
+	}
+
 	serialized_request, err := pb.Marshal(request)
 
 	if err != nil {
@@ -326,6 +364,14 @@ func (cl *Client) RequestProtobuf(request, reply pb.Message, service, endpoint s
 }
 
 func (cl *Client) RequestProtobufWithCtx(cx *server.Context, request, reply pb.Message, service, endpoint string) error {
+
+	if cl.do_healthcheck {
+		result := cl.doHealthCheck()
+		if !result {
+			return &RequestError{status: proto.RPCResponse_STATUS_UNHEALTHY, err: errors.New("RPC backend unhealthy")}
+		}
+	}
+
 	serialized_request, err := pb.Marshal(request)
 
 	if err != nil {
@@ -348,6 +394,14 @@ func (cl *Client) RequestProtobufWithCtx(cx *server.Context, request, reply pb.M
 }
 
 func (cl *Client) RequestProtobufWithCtxAndTrace(cx *server.Context, trace_dest *proto.TraceInfo, request, reply pb.Message, service, endpoint string) error {
+
+	if cl.do_healthcheck {
+		result := cl.doHealthCheck()
+		if !result {
+			return &RequestError{status: proto.RPCResponse_STATUS_UNHEALTHY, err: errors.New("RPC backend unhealthy")}
+		}
+	}
+
 	serialized_request, err := pb.Marshal(request)
 
 	if err != nil {

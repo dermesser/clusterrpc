@@ -160,11 +160,19 @@ func Client() {
 	defer cl.Close()
 	cl.SetLoglevel(clusterrpc.LOGLEVEL_DEBUG)
 	cl.SetTimeout(5 * time.Second)
-	cl.SetHealthcheck(true)
+	cl.SetHealthcheck(false)
+	cl.SetRetries(2)
 
 	trace_info := new(proto.TraceInfo)
 
 	/// Plain echo
+	status := cl.IsHealthy()
+
+	if !status {
+		fmt.Println("Backend not healthy")
+		return
+	}
+
 	resp, err := cl.Request([]byte("helloworld"), "EchoService", "Echo", trace_info)
 	fmt.Println(client.FormatTraceInfo(trace_info, 0))
 
