@@ -106,7 +106,9 @@ func (mgr *ServerSecurityManager) GetPublicKey() string {
 }
 
 // Loads private and public key from the specified files.
-// Does not initialize a key when the file name is server.DONOTREAD
+// Does not initialize a key when the file name is server.DONOTREAD (for example
+// when you only want to read the private key from disk -- use SetKeys() with an empty
+// private key and then LoadKeys() with public_file as DONOTREAD, leaving the public key untouched)
 func (mgr *ServerSecurityManager) LoadKeys(public_file, private_file string) error {
 	if public_file != DONOTREAD {
 		pubfile, err := os.Open(public_file)
