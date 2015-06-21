@@ -1,9 +1,9 @@
 
 build: protos
-	go build clusterrpc/proto clusterrpc clusterrpc/server clusterrpc/client
+	go build clusterrpc/proto clusterrpc clusterrpc/server clusterrpc/client clusterrpc/crpc-keygen
 
 install: protos
-	go install clusterrpc/proto clusterrpc clusterrpc/server clusterrpc/client
+	go install clusterrpc/proto clusterrpc clusterrpc/server clusterrpc/client clusterrpc/crpc-keygen
 
 test:
 	go test
