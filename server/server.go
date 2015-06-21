@@ -112,7 +112,7 @@ func NewServer(laddr string, port uint, worker_threads uint, loglevel clusterrpc
 		srv.logger.Println("Binding frontend to TCP address", fmt.Sprintf("tcp://%s:%d", laddr, port))
 	}
 
-	err = security_manager.applyToServerSocket(srv.frontend_router)
+	err = security_manager.ApplyToServerSocket(srv.frontend_router)
 
 	if err != nil {
 		return nil, err

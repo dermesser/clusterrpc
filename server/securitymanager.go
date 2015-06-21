@@ -46,7 +46,7 @@ func NewServerSecurityManager() *ServerSecurityManager {
 // Apply the internal keys to the server.
 // This must be called before applying Bind() on the socket!
 // Safe to call on a nil manager (nothing happens in that case
-func (mgr *ServerSecurityManager) applyToServerSocket(sock *zmq4.Socket) error {
+func (mgr *ServerSecurityManager) ApplyToServerSocket(sock *zmq4.Socket) error {
 	if mgr == nil {
 		return nil
 	}

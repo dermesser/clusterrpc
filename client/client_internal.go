@@ -26,7 +26,7 @@ func (cl *Client) createChannel() error {
 		return &RequestError{status: proto.RPCResponse_STATUS_CLIENT_NETWORK_ERROR, err: err}
 	}
 
-	err = cl.security_manager.applyToClientSocket(cl.channel)
+	err = cl.security_manager.ApplyToClientSocket(cl.channel)
 
 	if err != nil {
 		cl.logger.Println("Error when setting up security:", err.Error())
