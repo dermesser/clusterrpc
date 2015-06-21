@@ -9,6 +9,7 @@ import (
 )
 
 const DONOTWRITE = "___donotwrite_this_key"
+const DONOTREAD = "___donotread_key_from_file"
 
 type ClientSecurityManager struct {
 	public, private string
@@ -37,16 +38,16 @@ func (mgr *ClientSecurityManager) applyToClientSocket(sock *zmq4.Socket) error {
 		return nil
 	}
 
+	if mgr.server_public == "" || mgr.public == "" || mgr.private == "" {
+		return errors.New("Not all three keys (server's public, client public, client private) are set")
+	}
+
 	t, err := sock.GetType()
 
 	if err == nil && t != zmq4.REQ && t != zmq4.DEALER {
 		return errors.New("Wrong socket type (not DEALER, REQ)")
 	} else if err != nil {
 		return err
-	}
-
-	if mgr.server_public == "" || mgr.public == "" || mgr.private == "" {
-		return errors.New("Not all three keys (server's public, client public, client private) are set")
 	}
 
 	err = sock.ClientAuthCurve(mgr.server_public, mgr.public, mgr.private)

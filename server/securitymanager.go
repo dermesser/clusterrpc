@@ -9,6 +9,7 @@ import (
 )
 
 const DONOTWRITE = "___donotwrite_key_to_file"
+const DONOTREAD = "___donotread_key_from_file"
 const SERVER_DOMAIN = "clusterrpc.srv"
 
 // This module manages keys for a clusterrpc server. It is built after the API calls
@@ -48,6 +49,10 @@ func NewServerSecurityManager() *ServerSecurityManager {
 func (mgr *ServerSecurityManager) applyToServerSocket(sock *zmq4.Socket) error {
 	if mgr == nil {
 		return nil
+	}
+
+	if mgr.private == "" || mgr.public == "" {
+		return errors.New("Incomplete initialization: No key(s)")
 	}
 
 	t, err := sock.GetType()
@@ -101,43 +106,50 @@ func (mgr *ServerSecurityManager) GetPublicKey() string {
 }
 
 // Loads private and public key from the specified files.
+// Does not initialize a key when the file name is server.DONOTREAD
 func (mgr *ServerSecurityManager) LoadKeys(public_file, private_file string) error {
-	pubfile, err := os.Open(public_file)
-	defer pubfile.Close()
+	if public_file != DONOTREAD {
+		pubfile, err := os.Open(public_file)
+		defer pubfile.Close()
 
-	if err != nil {
-		return err
+		if err != nil {
+			return err
+		}
+
+		pubkeybuf := bytes.NewBuffer(nil)
+
+		n, err := pubkeybuf.ReadFrom(pubfile)
+
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return errors.New("Could not read public key")
+		}
+		mgr.public = pubkeybuf.String()
 	}
 
-	pubkeybuf, privkeybuf := bytes.NewBuffer(nil), bytes.NewBuffer(nil)
+	if private_file != DONOTREAD {
+		privfile, err := os.Open(private_file)
+		defer privfile.Close()
 
-	n, err := pubkeybuf.ReadFrom(pubfile)
+		if err != nil {
+			return err
+		}
 
-	if err != nil {
-		return err
+		privkeybuf := bytes.NewBuffer(nil)
+		n, err := privkeybuf.ReadFrom(privfile)
+
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return errors.New("Could not read private key")
+		}
+
+		mgr.private = privkeybuf.String()
+
 	}
-	if n == 0 {
-		return errors.New("Could not read public key")
-	}
-
-	privfile, err := os.Open(private_file)
-	defer privfile.Close()
-
-	if err != nil {
-		return err
-	}
-
-	n, err = privkeybuf.ReadFrom(privfile)
-
-	if err != nil {
-		return err
-	}
-	if n == 0 {
-		return errors.New("Could not read private key")
-	}
-
-	mgr.private = pubkeybuf.String()
-	mgr.public = pubkeybuf.String()
 	return nil
 }
 
