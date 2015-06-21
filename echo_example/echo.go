@@ -32,8 +32,10 @@ var host string
 
 var timed_out bool = false
 
+var output []byte
+
 func echoHandler(cx *server.Context) {
-	cx.Success(cx.GetInput())
+	cx.Success(output)
 	fmt.Println("Called echoHandler:", string(cx.GetInput()), len(cx.GetInput()))
 	return
 }
@@ -104,6 +106,12 @@ func Server() {
 
 	if err == nil {
 		srv.SetMachineName(hostname)
+	}
+
+	output = make([]byte, 1000000)
+
+	for i := 0; i < 1000000; i++ {
+		output[i] = byte('a' + i%26)
 	}
 
 	srv.RegisterHandler("EchoService", "Echo", echoHandler)
