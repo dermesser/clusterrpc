@@ -1,9 +1,9 @@
 
-build: protos
-	go build clusterrpc/proto clusterrpc clusterrpc/server clusterrpc/client
-
 install: protos
 	go install clusterrpc/proto clusterrpc clusterrpc/server clusterrpc/client
+
+build: protos
+	go build clusterrpc/proto clusterrpc clusterrpc/server clusterrpc/client
 
 test:
 	go test
