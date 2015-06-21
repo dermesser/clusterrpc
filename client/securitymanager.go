@@ -8,6 +8,8 @@ import (
 	"github.com/pebbe/zmq4"
 )
 
+const DONOTWRITE = "___donotwrite_this_key"
+
 type ClientSecurityManager struct {
 	public, private string
 	server_public   string
@@ -56,10 +58,12 @@ func (mgr *ClientSecurityManager) applyToClientSocket(sock *zmq4.Socket) error {
 	return nil
 }
 
+// Set the public key of the server.
 func (mgr *ClientSecurityManager) SetServerPubkey(key string) {
 	mgr.server_public = key
 }
 
+// Load the public key of the server from the specified file.
 func (mgr *ClientSecurityManager) LoadServerPubkey(keyfile string) error {
 	pubfile, err := os.Open(keyfile)
 	defer pubfile.Close()
@@ -84,10 +88,12 @@ func (mgr *ClientSecurityManager) LoadServerPubkey(keyfile string) error {
 	return nil
 }
 
+// Set the client key pair to the specified keys.
 func (mgr *ClientSecurityManager) SetKeys(public, private string) {
 	mgr.public, mgr.private = public, private
 }
 
+// Load the client key pair from the specified files.
 func (mgr *ClientSecurityManager) LoadKeys(public_file, private_file string) error {
 	pubfile, err := os.Open(public_file)
 	defer pubfile.Close()
@@ -128,37 +134,44 @@ func (mgr *ClientSecurityManager) LoadKeys(public_file, private_file string) err
 	return nil
 }
 
+// Write the client key pair to the specified files. If one of the file names is
+// client.DONOTWRITE, the function does not write the key to a file.
 func (mgr *ClientSecurityManager) WriteKeys(public_file, private_file string) error {
-	pubfile, err := os.OpenFile(public_file, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
-	defer pubfile.Close()
+	if public_file != DONOTWRITE {
+		pubfile, err := os.OpenFile(public_file, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
+		defer pubfile.Close()
 
-	if err != nil {
-		return err
+		if err != nil {
+			return err
+		}
+
+		n, err := pubfile.Write([]byte(mgr.public))
+
+		if err != nil {
+			return err
+		}
+		if n != len(mgr.public) {
+			return errors.New("Could not write correct number of bytes to public key file")
+		}
+
 	}
 
-	privfile, err := os.OpenFile(private_file, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
-	defer privfile.Close()
+	if private_file != DONOTWRITE {
+		privfile, err := os.OpenFile(private_file, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
+		defer privfile.Close()
 
-	if err != nil {
-		return err
-	}
+		if err != nil {
+			return err
+		}
 
-	n, err := pubfile.Write([]byte(mgr.public))
+		n, err := privfile.Write([]byte(mgr.private))
 
-	if err != nil {
-		return err
-	}
-	if n != len(mgr.public) {
-		return errors.New("Could not write correct number of bytes to public key file")
-	}
-
-	n, err = privfile.Write([]byte(mgr.private))
-
-	if err != nil {
-		return err
-	}
-	if n != len(mgr.private) {
-		return errors.New("Could not write correct number of bytes to private key file")
+		if err != nil {
+			return err
+		}
+		if n != len(mgr.private) {
+			return errors.New("Could not write correct number of bytes to private key file")
+		}
 	}
 
 	return nil
