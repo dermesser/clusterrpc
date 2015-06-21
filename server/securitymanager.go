@@ -14,6 +14,10 @@ const SERVER_DOMAIN = "clusterrpc.srv"
 // This module manages keys for a clusterrpc server. It is built after the API calls
 // as shown in the Iron House example of ZeroMQs CURVE security documentation.
 
+// A ServerSecurityManager can be supplied to NewServer(). It then sets up encryption and
+// authentication.
+// The security manager is very easy to use and enables both cryptographic/CURVE security and authentication
+// and (additionally - on top of that) IP authentication.
 type ServerSecurityManager struct {
 	// Z85 keys
 	public, private     string
@@ -54,6 +58,7 @@ func (mgr *ServerSecurityManager) applyToServerSocket(sock *zmq4.Socket) error {
 	} else if err != nil {
 		return err
 	}
+	zmq4.AuthSetVerbose(true)
 	// start in any case (returns error if already running, ignore that)
 	zmq4.AuthStart()
 
@@ -85,14 +90,17 @@ func (mgr *ServerSecurityManager) StopManager() {
 	zmq4.AuthStop()
 }
 
+// Set the public and private keys of the server.
 func (mgr *ServerSecurityManager) SetKeys(public, private string) {
 	mgr.public, mgr.private = public, private
 }
 
+// Returns the public key of the server.
 func (mgr *ServerSecurityManager) GetPublicKey() string {
 	return mgr.public
 }
 
+// Loads private and public key from the specified files.
 func (mgr *ServerSecurityManager) LoadKeys(public_file, private_file string) error {
 	pubfile, err := os.Open(public_file)
 	defer pubfile.Close()
@@ -133,6 +141,7 @@ func (mgr *ServerSecurityManager) LoadKeys(public_file, private_file string) err
 	return nil
 }
 
+// Writes a keypair to the supplied files.
 // If one of the file names is the constant DONOTWRITE, the function will not write to that file.
 // e.g. mgr.WriteKeys("pubkey.txt", server.DONOTWRITE) writes only the public key.
 func (mgr *ServerSecurityManager) WriteKeys(public_file, private_file string) error {
@@ -174,22 +183,26 @@ func (mgr *ServerSecurityManager) WriteKeys(public_file, private_file string) er
 	return nil
 }
 
+// Add keys of clients that are accepted.
 func (mgr *ServerSecurityManager) AddClientKeys(keys ...string) {
 	for _, k := range keys {
 		mgr.allowed_client_keys = append(mgr.allowed_client_keys, k)
 	}
 }
 
-// If this is called and no new keys are added, the server is open!
+// Remove all clients from the whitelist, effectively enforcing an OPEN policy
 func (mgr *ServerSecurityManager) ResetClientKeys() {
 	mgr.allowed_client_keys = nil
 }
 
+// Remove all clients from the blacklist, effectively enforcing an OPEN policy
 func (mgr *ServerSecurityManager) ResetBlackWhiteLists() {
 	mgr.allowed_client_addresses = nil
 	mgr.denied_client_addresses = nil
 }
 
+// Add clients (IP addresses or ranges) to the whitelist. A whitelist is mutually exclusive with a blacklist, meaning
+// that all blacklisted clients are removed when calling this function.
 func (mgr *ServerSecurityManager) WhitelistClients(addrs ...string) {
 	mgr.denied_client_addresses = nil
 
@@ -198,6 +211,8 @@ func (mgr *ServerSecurityManager) WhitelistClients(addrs ...string) {
 	}
 }
 
+// Add clients to the blacklist (IP addresses or ranges) to the blacklist. A blacklist is mutually exclusive with a
+// whitelist, meaning that all whitelisted clients are removed when calling this function.
 func (mgr *ServerSecurityManager) BlacklistClients(addrs ...string) {
 	mgr.allowed_client_addresses = nil
 
