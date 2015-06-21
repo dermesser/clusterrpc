@@ -46,6 +46,8 @@ type Client struct {
 	eagain_retries       uint
 	deadline_propagation bool
 	do_healthcheck       bool
+
+	security_manager *ClientSecurityManager
 }
 
 /*
@@ -58,8 +60,9 @@ being "STATUS_TIMEOUT" in case of a timeout (consolt Status()'s documentation fo
 of return codes)
 
 */
-func NewClient(client_name, raddr string, rport uint, loglevel clusterrpc.LOGLEVEL_T) (cl *Client, e error) {
-	return NewClientRR(client_name, []string{raddr}, []uint{rport}, loglevel)
+func NewClient(client_name, raddr string, rport uint, loglevel clusterrpc.LOGLEVEL_T,
+	security_manager *ClientSecurityManager) (cl *Client, e error) {
+	return NewClientRR(client_name, []string{raddr}, []uint{rport}, loglevel, security_manager)
 }
 
 /*
@@ -74,7 +77,8 @@ use-case might be a lookup or cache server.
 use-case might be a lookup or cache server.
 
 */
-func NewClientRR(client_name string, raddrs []string, rports []uint, loglevel clusterrpc.LOGLEVEL_T) (*Client, error) {
+func NewClientRR(client_name string, raddrs []string, rports []uint, loglevel clusterrpc.LOGLEVEL_T,
+	security_manager *ClientSecurityManager) (*Client, error) {
 	if len(raddrs) != len(rports) {
 		return nil, &RequestError{status: proto.RPCResponse_STATUS_CLIENT_CALLED_WRONG, err: errors.New("Mismatch between raddrs/rports lengths")}
 	}
@@ -90,6 +94,7 @@ func NewClientRR(client_name string, raddrs []string, rports []uint, loglevel cl
 	cl.eagain_retries = 0
 	cl.timeout = 4 * time.Second
 	cl.deadline_propagation = false
+	cl.security_manager = security_manager
 
 	err := cl.createChannel()
 

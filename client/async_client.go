@@ -37,7 +37,8 @@ higher parallelism can simply be achieved by using multiple AsyncClients.
 client_name is an arbitrary name that can be used to identify this client at the server (e.g.
 in logs)
 */
-func NewAsyncClient(client_name, raddr string, rport, queue_length uint, loglevel clusterrpc.LOGLEVEL_T) (*AsyncClient, error) {
+func NewAsyncClient(client_name, raddr string, rport, queue_length uint, loglevel clusterrpc.LOGLEVEL_T,
+	security_manager *ClientSecurityManager) (*AsyncClient, error) {
 
 	cl := new(AsyncClient)
 	cl.logger = log.New(os.Stderr, "clusterrpc.AsyncClient "+client_name+": ", log.Lmicroseconds)
@@ -45,7 +46,7 @@ func NewAsyncClient(client_name, raddr string, rport, queue_length uint, logleve
 	cl.qlength = queue_length
 
 	var err error
-	cl.client, err = NewClient(client_name, raddr, rport, cl.loglevel)
+	cl.client, err = NewClient(client_name, raddr, rport, cl.loglevel, security_manager)
 
 	if err != nil {
 		cl.logger.Println("Synchronous client constructor returned error:", err.Error())

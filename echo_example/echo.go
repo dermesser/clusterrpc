@@ -32,6 +32,11 @@ var host string
 
 var timed_out bool = false
 
+var output []byte
+
+var client_security_manager *client.ClientSecurityManager
+var server_security_manager *server.ServerSecurityManager
+
 func echoHandler(cx *server.Context) {
 	cx.Success(cx.GetInput())
 	fmt.Println("Called echoHandler:", string(cx.GetInput()), len(cx.GetInput()))
@@ -54,7 +59,7 @@ func errorReturningHandler(cx *server.Context) {
 
 // Calls another procedure on the same server (itself)
 func callingHandler(cx *server.Context) {
-	cl, err := client.NewClient("caller", host, port, clusterrpc.LOGLEVEL_WARNINGS)
+	cl, err := client.NewClient("caller", host, port, clusterrpc.LOGLEVEL_WARNINGS, client_security_manager)
 
 	if err != nil {
 		cx.Success([]byte("heyho :'("))
@@ -92,7 +97,7 @@ func Server() {
 		poolsize = 2
 	}
 
-	srv, err := server.NewServer(host, port, poolsize, clusterrpc.LOGLEVEL_DEBUG) // don't set GOMAXPROCS if you want to test the loadbalancer (for correct queuing)
+	srv, err := server.NewServer(host, port, poolsize, clusterrpc.LOGLEVEL_DEBUG, server_security_manager) // don't set GOMAXPROCS if you want to test the loadbalancer (for correct queuing)
 
 	if err != nil {
 		return
@@ -118,7 +123,7 @@ func Server() {
 }
 
 func CachedClient() {
-	cc := client.NewConnCache("echo1_cc", clusterrpc.LOGLEVEL_DEBUG)
+	cc := client.NewConnCache("echo1_cc", clusterrpc.LOGLEVEL_DEBUG, client_security_manager)
 
 	cl, err := cc.Connect(host, port)
 
@@ -152,7 +157,7 @@ func CachedClient() {
 }
 
 func Client() {
-	cl, err := client.NewClient("echo1_cl", host, port, clusterrpc.LOGLEVEL_DEBUG)
+	cl, err := client.NewClient("echo1_cl", host, port, clusterrpc.LOGLEVEL_DEBUG, client_security_manager)
 	if err != nil {
 		fmt.Println(err.Error())
 		return
@@ -226,7 +231,7 @@ func Client() {
 }
 
 func Aclient() {
-	acl, err := client.NewAsyncClient("echo1_acl", host, port, 1, clusterrpc.LOGLEVEL_DEBUG)
+	acl, err := client.NewAsyncClient("echo1_acl", host, port, 1, clusterrpc.LOGLEVEL_DEBUG, client_security_manager)
 	if err != nil {
 		fmt.Println(err.Error())
 		return
@@ -262,7 +267,7 @@ func benchServer() {
 		poolsize = 2
 	}
 
-	srv, err := server.NewServer(host, port, poolsize, clusterrpc.LOGLEVEL_WARNINGS)
+	srv, err := server.NewServer(host, port, poolsize, clusterrpc.LOGLEVEL_WARNINGS, server_security_manager)
 
 	if err != nil {
 		return
@@ -282,7 +287,7 @@ var requestcount uint32 = 0
 var waitgroup sync.WaitGroup
 
 func benchClient(n int) {
-	cl, err := client.NewClient("echo1_cl", host, port, clusterrpc.LOGLEVEL_WARNINGS)
+	cl, err := client.NewClient("echo1_cl", host, port, clusterrpc.LOGLEVEL_WARNINGS, client_security_manager)
 	if err != nil {
 		fmt.Println(err.Error())
 		return
@@ -302,9 +307,20 @@ func benchClient(n int) {
 	waitgroup.Done()
 }
 
+func initializeSecurity(is_server bool) {
+	if is_server {
+		server_security_manager = server.NewServerSecurityManager()
+		server_security_manager.WriteKeys("srvpub.txt", server.DONOTWRITE)
+	}
+	client_security_manager = client.NewClientSecurityManager()
+	client_security_manager.LoadServerPubkey("srvpub.txt")
+
+	return
+}
+
 func main() {
 
-	var srv, cl, acl, srvbench bool
+	var srv, cl, acl, srvbench, secure bool
 	var clbench int
 
 	flag.BoolVar(&acl, "acl", false, "Run the asynchronous client")
@@ -318,7 +334,13 @@ func main() {
 
 	flag.IntVar(&clbench, "clbench", 0, "Run the benchmark client; there will be GOMAXPROCS clients running, each sending `clbench` requests.")
 
+	flag.BoolVar(&secure, "secure", true, "Use ZeroMQ CURVE.")
+
 	flag.Parse()
+
+	if secure {
+		initializeSecurity(srv || srvbench)
+	}
 
 	var argcnt int = 0
 	if srv {
