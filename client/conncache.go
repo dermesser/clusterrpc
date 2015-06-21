@@ -15,16 +15,18 @@ the application should call Return() with the connection if it wants to use it l
 */
 type ConnectionCache struct {
 	// Map host -> connections
-	cache       map[string]*list.List
-	client_name string
-	loglevel    clusterrpc.LOGLEVEL_T
+	cache            map[string]*list.List
+	client_name      string
+	loglevel         clusterrpc.LOGLEVEL_T
+	security_manager *ClientSecurityManager
 
 	mx sync.Mutex
 }
 
-func NewConnCache(client_name string, loglevel clusterrpc.LOGLEVEL_T) *ConnectionCache {
+func NewConnCache(client_name string, loglevel clusterrpc.LOGLEVEL_T,
+	security_manager *ClientSecurityManager) *ConnectionCache {
 	return &ConnectionCache{cache: make(map[string]*list.List),
-		client_name: client_name, loglevel: loglevel}
+		client_name: client_name, loglevel: loglevel, security_manager: security_manager}
 }
 
 /*
@@ -47,7 +49,7 @@ func (cc *ConnectionCache) Connect(host string, port uint) (*Client, error) {
 		cc.cache[host+fmt.Sprint(port)] = list.New()
 	}
 
-	new_cl, err := NewClient(cc.client_name, host, port, cc.loglevel)
+	new_cl, err := NewClient(cc.client_name, host, port, cc.loglevel, cc.security_manager)
 
 	if err != nil {
 		return nil, err

@@ -30,7 +30,7 @@ func NewClientSecurityManager() *ClientSecurityManager {
 
 // Sets up a client socket for CURVE security. If called on nil, does nothing.
 // This function must be called before calling Connect() on the socket!
-func (mgr *ClientSecurityManager) applyToClientSocket(sock zmq4.Socket) error {
+func (mgr *ClientSecurityManager) applyToClientSocket(sock *zmq4.Socket) error {
 	if mgr == nil {
 		return nil
 	}

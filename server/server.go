@@ -50,11 +50,15 @@ do not work. There is usually only one server listening per process
 worker_threads is the number of workers; however, there are (additionally) at least one load-balancing thread
 and one ZeroMQ networking thread.
 
+security_manager adds CURVE and IP "authentication" security to the server. If it's nil, do
+not add security.
+
 Use the setter functions described below before calling Start(), otherwise they might
 be ignored.
 
 */
-func NewServer(laddr string, port uint, worker_threads uint, loglevel clusterrpc.LOGLEVEL_T) (*Server, error) {
+func NewServer(laddr string, port uint, worker_threads uint, loglevel clusterrpc.LOGLEVEL_T,
+	security_manager *ServerSecurityManager) (*Server, error) {
 
 	srv := new(Server)
 	srv.services = make(map[string]*service)
@@ -107,6 +111,8 @@ func NewServer(laddr string, port uint, worker_threads uint, loglevel clusterrpc
 	if srv.loglevel >= clusterrpc.LOGLEVEL_INFO {
 		srv.logger.Println("Binding frontend to TCP address", fmt.Sprintf("tcp://%s:%d", laddr, port))
 	}
+
+	security_manager.applyToServerSocket(srv.frontend_router)
 
 	err = srv.frontend_router.Bind(fmt.Sprintf("tcp://%s:%d", laddr, port))
 

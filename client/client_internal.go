@@ -27,6 +27,8 @@ func (cl *Client) createChannel() error {
 		return &RequestError{status: proto.RPCResponse_STATUS_CLIENT_NETWORK_ERROR, err: err}
 	}
 
+	cl.security_manager.applyToClientSocket(cl.channel)
+
 	cl.channel.SetIpv6(true)
 	cl.channel.SetReconnectIvl(100 * time.Millisecond)
 
@@ -73,13 +75,16 @@ func (cl *Client) connectToPeers() error {
 }
 
 // Use only for redirected requests, otherwise the tracing doesn't work as intended!
+// The security manager is only used when having no settings_cl.
 func requestRedirect(raddr string, rport uint, service, endpoint string, request_data []byte,
-	allow_redirect bool, settings_cl *Client, trace_dest *proto.TraceInfo) ([]byte, error) {
+	allow_redirect bool, settings_cl *Client, trace_dest *proto.TraceInfo,
+	security_manager *ClientSecurityManager) ([]byte, error) {
 	var cl *Client
 	var err error
 
 	if settings_cl != nil {
-		cl, err = NewClient(settings_cl.name+"_redir", raddr, rport, settings_cl.loglevel)
+		cl, err = NewClient(settings_cl.name+"_redir", raddr, rport, settings_cl.loglevel,
+			settings_cl.security_manager)
 
 		if err != nil {
 			return nil, &RequestError{status: proto.RPCResponse_STATUS_CLIENT_REQUEST_ERROR, err: err}
@@ -90,7 +95,7 @@ func requestRedirect(raddr string, rport uint, service, endpoint string, request
 		cl.SetTimeout(settings_cl.timeout)
 		cl.accept_redirect = allow_redirect
 	} else {
-		cl, err = NewClient("anonymous_tmp_client", raddr, rport, clusterrpc.LOGLEVEL_WARNINGS)
+		cl, err = NewClient("anonymous_tmp_client", raddr, rport, clusterrpc.LOGLEVEL_WARNINGS, security_manager)
 
 		if err != nil {
 			return nil, &RequestError{status: proto.RPCResponse_STATUS_CLIENT_REQUEST_ERROR, err: err}
@@ -211,10 +216,11 @@ func (cl *Client) request(cx *server.Context, trace_dest *proto.TraceInfo, data 
 		if cl.accept_redirect {
 			if respproto.GetRedirService() == "" || respproto.GetRedirEndpoint() == "" { // No different service.endpoint given, retry with same method
 				return requestRedirect(respproto.GetRedirHost(), uint(respproto.GetRedirPort()),
-					service, endpoint, data, false, cl, trace_dest)
+					service, endpoint, data, false, cl, trace_dest, nil)
 			} else {
 				return requestRedirect(respproto.GetRedirHost(), uint(respproto.GetRedirPort()),
-					respproto.GetRedirService(), respproto.GetRedirEndpoint(), data, false, cl, trace_dest)
+					respproto.GetRedirService(), respproto.GetRedirEndpoint(), data, false,
+					cl, trace_dest, nil)
 			}
 		} else {
 			if cl.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
