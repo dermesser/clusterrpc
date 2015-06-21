@@ -2,6 +2,7 @@ package client
 
 import (
 	"clusterrpc"
+	smgr "clusterrpc/securitymanager"
 	"container/list"
 	"fmt"
 	"sync"
@@ -18,13 +19,13 @@ type ConnectionCache struct {
 	cache            map[string]*list.List
 	client_name      string
 	loglevel         clusterrpc.LOGLEVEL_T
-	security_manager *ClientSecurityManager
+	security_manager *smgr.ClientSecurityManager
 
 	mx sync.Mutex
 }
 
 func NewConnCache(client_name string, loglevel clusterrpc.LOGLEVEL_T,
-	security_manager *ClientSecurityManager) *ConnectionCache {
+	security_manager *smgr.ClientSecurityManager) *ConnectionCache {
 	return &ConnectionCache{cache: make(map[string]*list.List),
 		client_name: client_name, loglevel: loglevel, security_manager: security_manager}
 }

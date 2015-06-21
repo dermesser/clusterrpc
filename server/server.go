@@ -2,6 +2,8 @@ package server
 
 import (
 	"clusterrpc"
+
+	smgr "clusterrpc/securitymanager"
 	"errors"
 	"fmt"
 	"io"
@@ -58,7 +60,7 @@ be ignored.
 
 */
 func NewServer(laddr string, port uint, worker_threads uint, loglevel clusterrpc.LOGLEVEL_T,
-	security_manager *ServerSecurityManager) (*Server, error) {
+	security_manager *smgr.ServerSecurityManager) (*Server, error) {
 
 	srv := new(Server)
 	srv.services = make(map[string]*service)

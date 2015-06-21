@@ -2,6 +2,7 @@ package client
 
 import (
 	"clusterrpc"
+	smgr "clusterrpc/securitymanager"
 	"io"
 	"log"
 	"os"
@@ -38,7 +39,7 @@ client_name is an arbitrary name that can be used to identify this client at the
 in logs)
 */
 func NewAsyncClient(client_name, raddr string, rport, queue_length uint, loglevel clusterrpc.LOGLEVEL_T,
-	security_manager *ClientSecurityManager) (*AsyncClient, error) {
+	security_manager *smgr.ClientSecurityManager) (*AsyncClient, error) {
 
 	cl := new(AsyncClient)
 	cl.logger = log.New(os.Stderr, "clusterrpc.AsyncClient "+client_name+": ", log.Lmicroseconds)

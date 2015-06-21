@@ -1,7 +1,7 @@
 package main
 
 import (
-	"clusterrpc/client"
+	"clusterrpc/securitymanager"
 	"flag"
 	"fmt"
 )
@@ -16,7 +16,7 @@ func main() {
 
 	flag.Parse()
 
-	mgr := client.NewClientSecurityManager()
+	mgr := securitymanager.NewClientSecurityManager()
 
 	mgr.WriteKeys(pubfile, privfile)
 

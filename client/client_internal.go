@@ -3,6 +3,7 @@ package client
 import (
 	"clusterrpc"
 	"clusterrpc/proto"
+	smgr "clusterrpc/securitymanager"
 	"clusterrpc/server"
 	"fmt"
 	"time"
@@ -82,7 +83,7 @@ func (cl *Client) connectToPeers() error {
 // The security manager is only used when having no settings_cl.
 func requestRedirect(raddr string, rport uint, service, endpoint string, request_data []byte,
 	allow_redirect bool, settings_cl *Client, trace_dest *proto.TraceInfo,
-	security_manager *ClientSecurityManager) ([]byte, error) {
+	security_manager *smgr.ClientSecurityManager) ([]byte, error) {
 	var cl *Client
 	var err error
 

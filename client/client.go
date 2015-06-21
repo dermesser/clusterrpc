@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"clusterrpc"
 	"clusterrpc/proto"
+	smgr "clusterrpc/securitymanager"
 	"clusterrpc/server"
 	"errors"
 	"fmt"
@@ -47,7 +48,7 @@ type Client struct {
 	deadline_propagation bool
 	do_healthcheck       bool
 
-	security_manager *ClientSecurityManager
+	security_manager *smgr.ClientSecurityManager
 }
 
 /*
@@ -61,7 +62,7 @@ of return codes)
 
 */
 func NewClient(client_name, raddr string, rport uint, loglevel clusterrpc.LOGLEVEL_T,
-	security_manager *ClientSecurityManager) (cl *Client, e error) {
+	security_manager *smgr.ClientSecurityManager) (cl *Client, e error) {
 	return NewClientRR(client_name, []string{raddr}, []uint{rport}, loglevel, security_manager)
 }
 
@@ -78,7 +79,7 @@ use-case might be a lookup or cache server.
 
 */
 func NewClientRR(client_name string, raddrs []string, rports []uint, loglevel clusterrpc.LOGLEVEL_T,
-	security_manager *ClientSecurityManager) (*Client, error) {
+	security_manager *smgr.ClientSecurityManager) (*Client, error) {
 	if len(raddrs) != len(rports) {
 		return nil, &RequestError{status: proto.RPCResponse_STATUS_CLIENT_CALLED_WRONG, err: errors.New("Mismatch between raddrs/rports lengths")}
 	}

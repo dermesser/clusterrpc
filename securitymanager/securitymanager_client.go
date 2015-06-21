@@ -1,4 +1,4 @@
-package client
+package securitymanager
 
 import (
 	"bytes"
@@ -7,9 +7,6 @@ import (
 
 	"github.com/pebbe/zmq4"
 )
-
-const DONOTWRITE = "___donotwrite_this_key"
-const DONOTREAD = "___donotread_key_from_file"
 
 type ClientSecurityManager struct {
 	public, private string
