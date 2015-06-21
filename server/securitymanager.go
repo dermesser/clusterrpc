@@ -8,6 +8,7 @@ import (
 	"github.com/pebbe/zmq4"
 )
 
+const DONOTWRITE = "___donotwrite_key_to_file"
 const SERVER_DOMAIN = "clusterrpc.srv"
 
 // This module manages keys for a clusterrpc server. It is built after the API calls
@@ -53,7 +54,6 @@ func (mgr *ServerSecurityManager) applyToServerSocket(sock *zmq4.Socket) error {
 	} else if err != nil {
 		return err
 	}
-
 	// start in any case (returns error if already running, ignore that)
 	zmq4.AuthStart()
 
@@ -128,44 +128,49 @@ func (mgr *ServerSecurityManager) LoadKeys(public_file, private_file string) err
 		return errors.New("Could not read private key")
 	}
 
-	mgr.private = string(privkeybuf.Bytes())
-	mgr.public = string(pubkeybuf.Bytes())
+	mgr.private = pubkeybuf.String()
+	mgr.public = pubkeybuf.String()
 	return nil
 }
 
+// If one of the file names is the constant DONOTWRITE, the function will not write to that file.
+// e.g. mgr.WriteKeys("pubkey.txt", server.DONOTWRITE) writes only the public key.
 func (mgr *ServerSecurityManager) WriteKeys(public_file, private_file string) error {
-	pubfile, err := os.OpenFile(public_file, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
-	defer pubfile.Close()
 
-	if err != nil {
-		return err
+	if public_file != DONOTWRITE {
+		pubfile, err := os.OpenFile(public_file, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
+		defer pubfile.Close()
+
+		if err != nil {
+			return err
+		}
+		n, err := pubfile.Write([]byte(mgr.public))
+
+		if err != nil {
+			return err
+		}
+		if n != len(mgr.public) {
+			return errors.New("Could not write correct number of bytes to public key file")
+		}
 	}
 
-	privfile, err := os.OpenFile(private_file, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
-	defer privfile.Close()
+	if private_file != DONOTWRITE {
+		privfile, err := os.OpenFile(private_file, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
+		defer privfile.Close()
 
-	if err != nil {
-		return err
+		if err != nil {
+			return err
+		}
+
+		n, err := privfile.Write([]byte(mgr.private))
+
+		if err != nil {
+			return err
+		}
+		if n != len(mgr.private) {
+			return errors.New("Could not write correct number of bytes to private key file")
+		}
 	}
-
-	n, err := pubfile.Write([]byte(mgr.public))
-
-	if err != nil {
-		return err
-	}
-	if n != len(mgr.public) {
-		return errors.New("Could not write correct number of bytes to public key file")
-	}
-
-	n, err = privfile.Write([]byte(mgr.private))
-
-	if err != nil {
-		return err
-	}
-	if n != len(mgr.private) {
-		return errors.New("Could not write correct number of bytes to private key file")
-	}
-
 	return nil
 }
 

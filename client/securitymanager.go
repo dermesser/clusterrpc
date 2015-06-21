@@ -79,6 +79,8 @@ func (mgr *ClientSecurityManager) LoadServerPubkey(keyfile string) error {
 		return errors.New("Could not read public key")
 	}
 
+	mgr.server_public = pubkeybuf.String()
+
 	return nil
 }
 
