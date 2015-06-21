@@ -40,8 +40,8 @@ func (mgr *ClientSecurityManager) ApplyToClientSocket(sock *zmq4.Socket) error {
 
 	t, err := sock.GetType()
 
-	if err == nil && t != zmq4.REQ && t != zmq4.DEALER {
-		return errors.New("Wrong socket type (not DEALER, REQ)")
+	if err == nil && t != zmq4.REQ && t != zmq4.DEALER && t != zmq4.SUB {
+		return errors.New("Wrong socket type (not DEALER, REQ, SUB)")
 	} else if err != nil {
 		return err
 	}

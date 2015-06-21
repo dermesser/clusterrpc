@@ -57,8 +57,8 @@ func (mgr *ServerSecurityManager) ApplyToServerSocket(sock *zmq4.Socket) error {
 	t, err := sock.GetType()
 
 	// Only apply to actual server sockets
-	if err == nil && t != zmq4.ROUTER && t != zmq4.REP {
-		return errors.New("Wrong socket type (not ROUTER, REP)")
+	if err == nil && t != zmq4.ROUTER && t != zmq4.REP && t != zmq4.PUB {
+		return errors.New("Wrong socket type (not ROUTER, REP, PUB)")
 	} else if err != nil {
 		return err
 	}
