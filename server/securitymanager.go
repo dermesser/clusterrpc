@@ -10,9 +10,10 @@ import (
 
 const SERVER_DOMAIN = "clusterrpc.srv"
 
-// This module manages keys for a clusterrpc server.
+// This module manages keys for a clusterrpc server. It is built after the API calls
+// as shown in the Iron House example of ZeroMQs CURVE security documentation.
 
-type serverSecurityManager struct {
+type ServerSecurityManager struct {
 	// Z85 keys
 	public, private     string
 	allowed_client_keys []string
@@ -23,8 +24,8 @@ type serverSecurityManager struct {
 }
 
 // Set up key manager and generate new key pair.
-func NewServerSecurityManager() *serverSecurityManager {
-	mgr := &serverSecurityManager{}
+func NewServerSecurityManager() *ServerSecurityManager {
+	mgr := &ServerSecurityManager{}
 	var err error
 
 	mgr.public, mgr.private, err = zmq4.NewCurveKeypair()
@@ -38,12 +39,19 @@ func NewServerSecurityManager() *serverSecurityManager {
 
 // Apply the internal keys to the server.
 // This must be called before applying Bind() on the socket!
-func (mgr *serverSecurityManager) applyToServerSocket(sock *zmq4.Socket) error {
+// Safe to call on a nil manager (nothing happens in that case
+func (mgr *ServerSecurityManager) applyToServerSocket(sock *zmq4.Socket) error {
+	if mgr == nil {
+		return nil
+	}
+
 	t, err := sock.GetType()
 
 	// Only apply to actual server sockets
-	if err != nil && t != zmq4.ROUTER && t != zmq4.REP {
-		return errors.New("Wrong socket type")
+	if err == nil && t != zmq4.ROUTER && t != zmq4.REP {
+		return errors.New("Wrong socket type (not ROUTER, REP)")
+	} else if err != nil {
+		return err
 	}
 
 	// start in any case (returns error if already running, ignore that)
@@ -73,19 +81,19 @@ func (mgr *serverSecurityManager) applyToServerSocket(sock *zmq4.Socket) error {
 }
 
 // Tear down all resources associated with authentication
-func (mgr *serverSecurityManager) StopManager() {
+func (mgr *ServerSecurityManager) StopManager() {
 	zmq4.AuthStop()
 }
 
-func (mgr *serverSecurityManager) SetKeys(public, private string) {
+func (mgr *ServerSecurityManager) SetKeys(public, private string) {
 	mgr.public, mgr.private = public, private
 }
 
-func (mgr *serverSecurityManager) GetPublicKey() string {
+func (mgr *ServerSecurityManager) GetPublicKey() string {
 	return mgr.public
 }
 
-func (mgr *serverSecurityManager) LoadKeys(public_file, private_file string) error {
+func (mgr *ServerSecurityManager) LoadKeys(public_file, private_file string) error {
 	pubfile, err := os.Open(public_file)
 	defer pubfile.Close()
 
@@ -125,7 +133,7 @@ func (mgr *serverSecurityManager) LoadKeys(public_file, private_file string) err
 	return nil
 }
 
-func (mgr *serverSecurityManager) WriteKeys(public_file, private_file string) error {
+func (mgr *ServerSecurityManager) WriteKeys(public_file, private_file string) error {
 	pubfile, err := os.OpenFile(public_file, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
 	defer pubfile.Close()
 
@@ -154,30 +162,30 @@ func (mgr *serverSecurityManager) WriteKeys(public_file, private_file string) er
 	if err != nil {
 		return err
 	}
-	if n != len(mgr.public) {
+	if n != len(mgr.private) {
 		return errors.New("Could not write correct number of bytes to private key file")
 	}
 
 	return nil
 }
 
-func (mgr *serverSecurityManager) AddClientKeys(keys ...string) {
+func (mgr *ServerSecurityManager) AddClientKeys(keys ...string) {
 	for _, k := range keys {
 		mgr.allowed_client_keys = append(mgr.allowed_client_keys, k)
 	}
 }
 
 // If this is called and no new keys are added, the server is open!
-func (mgr *serverSecurityManager) ResetClientKeys() {
+func (mgr *ServerSecurityManager) ResetClientKeys() {
 	mgr.allowed_client_keys = nil
 }
 
-func (mgr *serverSecurityManager) ResetBlackWhiteLists() {
+func (mgr *ServerSecurityManager) ResetBlackWhiteLists() {
 	mgr.allowed_client_addresses = nil
 	mgr.denied_client_addresses = nil
 }
 
-func (mgr *serverSecurityManager) WhitelistClients(addrs ...string) {
+func (mgr *ServerSecurityManager) WhitelistClients(addrs ...string) {
 	mgr.denied_client_addresses = nil
 
 	for _, c := range addrs {
@@ -185,7 +193,7 @@ func (mgr *serverSecurityManager) WhitelistClients(addrs ...string) {
 	}
 }
 
-func (mgr *serverSecurityManager) BlacklistClients(addrs ...string) {
+func (mgr *ServerSecurityManager) BlacklistClients(addrs ...string) {
 	mgr.allowed_client_addresses = nil
 
 	for _, c := range addrs {
