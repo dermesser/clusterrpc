@@ -63,7 +63,6 @@ func (mgr *ServerSecurityManager) applyToServerSocket(sock *zmq4.Socket) error {
 	} else if err != nil {
 		return err
 	}
-	zmq4.AuthSetVerbose(true)
 	// start in any case (returns error if already running, ignore that)
 	zmq4.AuthStart()
 
