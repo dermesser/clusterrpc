@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestWriteLoad(t *testing.T) {
+func TestWriteLoadServer(t *testing.T) {
 	mgr := NewServerSecurityManager()
 
 	err := mgr.WriteKeys("pubkey.txt", "privkey.txt")
