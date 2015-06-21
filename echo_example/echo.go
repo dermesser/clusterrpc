@@ -17,6 +17,7 @@ import (
 	"clusterrpc"
 	"clusterrpc/client"
 	"clusterrpc/proto"
+	smgr "clusterrpc/securitymanager"
 	"clusterrpc/server"
 	"flag"
 	"fmt"
@@ -34,8 +35,8 @@ var timed_out bool = false
 
 var output []byte
 
-var client_security_manager *client.ClientSecurityManager
-var server_security_manager *server.ServerSecurityManager
+var client_security_manager *smgr.ClientSecurityManager
+var server_security_manager *smgr.ServerSecurityManager
 
 func echoHandler(cx *server.Context) {
 	cx.Success(cx.GetInput())
@@ -309,10 +310,10 @@ func benchClient(n int) {
 
 func initializeSecurity(is_server bool) {
 	if is_server {
-		server_security_manager = server.NewServerSecurityManager()
-		server_security_manager.WriteKeys("srvpub.txt", server.DONOTWRITE)
+		server_security_manager = smgr.NewServerSecurityManager()
+		server_security_manager.WriteKeys("srvpub.txt", smgr.DONOTWRITE)
 	}
-	client_security_manager = client.NewClientSecurityManager()
+	client_security_manager = smgr.NewClientSecurityManager()
 	client_security_manager.LoadServerPubkey("srvpub.txt")
 
 	return
