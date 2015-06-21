@@ -16,25 +16,25 @@ the application should call Return() with the connection if it wants to use it l
 */
 type ConnectionCache struct {
 	// Map host -> connections
-	cache            map[string]*list.List
-	client_name      string
-	loglevel         clusterrpc.LOGLEVEL_T
-	security_manager *smgr.ClientSecurityManager
+	cache       map[string]*list.List
+	client_name string
+	loglevel    clusterrpc.LOGLEVEL_T
 
 	mx sync.Mutex
 }
 
-func NewConnCache(client_name string, loglevel clusterrpc.LOGLEVEL_T,
-	security_manager *smgr.ClientSecurityManager) *ConnectionCache {
+func NewConnCache(client_name string, loglevel clusterrpc.LOGLEVEL_T) *ConnectionCache {
 	return &ConnectionCache{cache: make(map[string]*list.List),
-		client_name: client_name, loglevel: loglevel, security_manager: security_manager}
+		client_name: client_name, loglevel: loglevel}
 }
 
 /*
 Get a connection, either from the pool or a new one, depending on if there are connections
 available.
 */
-func (cc *ConnectionCache) Connect(host string, port uint) (*Client, error) {
+func (cc *ConnectionCache) Connect(host string, port uint,
+	security_manager *smgr.ClientSecurityManager) (*Client, error) {
+
 	cc.mx.Lock()
 	defer cc.mx.Unlock()
 
@@ -50,7 +50,7 @@ func (cc *ConnectionCache) Connect(host string, port uint) (*Client, error) {
 		cc.cache[host+fmt.Sprint(port)] = list.New()
 	}
 
-	new_cl, err := NewClient(cc.client_name, host, port, cc.loglevel, cc.security_manager)
+	new_cl, err := NewClient(cc.client_name, host, port, cc.loglevel, security_manager)
 
 	if err != nil {
 		return nil, err
