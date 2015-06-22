@@ -124,9 +124,9 @@ func Server() {
 }
 
 func CachedClient() {
-	cc := client.NewConnCache("echo1_cc", clusterrpc.LOGLEVEL_DEBUG, client_security_manager)
+	cc := client.NewConnCache("echo1_cc", clusterrpc.LOGLEVEL_DEBUG)
 
-	cl, err := cc.Connect(host, port)
+	cl, err := cc.Connect(host, port, client_security_manager)
 
 	if err != nil {
 		fmt.Println(err.Error())
@@ -138,7 +138,7 @@ func CachedClient() {
 	cc.Return(&cl)
 
 	for i := 0; i < 5; i++ {
-		cl, err = cc.Connect(host, port)
+		cl, err = cc.Connect(host, port, client_security_manager)
 
 		if err != nil {
 			fmt.Println(err.Error())
