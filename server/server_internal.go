@@ -15,6 +15,7 @@ import (
 const BACKEND_ROUTER_PATH string = "inproc://rpc_backend_router"
 
 var MAGIC_READY_STRING []byte = []byte("___ReAdY___")
+var MAGIC_STOP_STRING []byte = []byte("___STOPBALANCER___")
 
 const OUTSTANDING_REQUESTS_PER_THREAD uint = 50
 
@@ -27,6 +28,82 @@ This file has the internal functions, the actual server; server.go remains
 uncluttered and with only public functions.
 */
 
+func (srv *Server) stop() error {
+	if srv.loglevel >= clusterrpc.LOGLEVEL_INFO {
+		srv.logger.Println("Stopping workers...")
+	}
+	// First stop all worker threads
+	for i := uint(0); i < srv.n_threads; i++ {
+		_, err := srv.backend_router.SendMessage(
+			fmt.Sprintf("%d", i), "", []byte{0xde, 0xad, 0xde, 0xad}, "BOGUS_RQID", "", MAGIC_STOP_STRING) // [worker identity, "", client identity, request_id, "", RPCRequest]
+		if err != nil {
+			if srv.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
+				srv.logger.Println("Could not send stop message to load balancer, exiting!", err.Error())
+			}
+			return err
+		}
+	}
+
+	sock, err := srv.zmq_context.NewSocket(zmq.REQ)
+
+	if srv.loglevel >= clusterrpc.LOGLEVEL_DEBUG {
+		srv.logger.Println("Stopping balancer thread...")
+	}
+
+	if err != nil {
+		if srv.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
+			srv.logger.Println("Could not create socket for stopping, exiting!")
+		}
+		return err
+	}
+
+	worker_identity := "_x"
+	err = sock.SetIdentity(worker_identity)
+
+	if err != nil {
+		if srv.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
+			srv.logger.Println("Could not set identity on socket for stopping, exiting!", err.Error())
+		}
+		return err
+	}
+
+	err = sock.Connect(BACKEND_ROUTER_PATH)
+
+	if err != nil {
+		if srv.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
+			srv.logger.Println("Could not connect to load balancer thread, exiting!", err.Error())
+		}
+		return err
+	}
+
+	_, err = sock.SendMessage("___BOGUS_CLIENT_ID", "__BOGUS_REQ_ID", "", MAGIC_STOP_STRING)
+
+	if err != nil {
+		if srv.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
+			srv.logger.Println("Could not send stop message to load balancer, exiting!", err.Error())
+		}
+		return err
+	}
+
+	// Wait for ack
+	_, err = sock.RecvMessageBytes(0)
+
+	if err != nil {
+		if srv.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
+			srv.logger.Println("Could not send stop message to load balancer, exiting!", err.Error())
+		}
+		return err
+	}
+
+	if srv.loglevel >= clusterrpc.LOGLEVEL_INFO {
+		srv.logger.Println("RPC server and workers stopped")
+	}
+
+	sock.Close()
+
+	return nil
+}
+
 /*
 Load balancer using the least used worker: We have a list (queue) of backend worker identities;
 a backend is queued when it sends a response, and dequeued when it is sent a client request.
@@ -36,6 +113,9 @@ This queue is consulted every time a worker has completed a request, which resul
 good resource efficiency.
 */
 func (srv *Server) loadbalance() {
+	srv.lblock.Lock()
+	defer srv.lblock.Unlock()
+
 	// List of workers that are free -- list of []byte!
 	worker_queue := list.New()
 
@@ -148,10 +228,31 @@ func (srv *Server) loadbalance() {
 					}
 
 					backend_identity := msgs[0]
-					worker_queue.PushBack(backend_identity)
 
-					// third frame is MAGIC_READY_STRING when a new worker joins.
-					if !bytes.Equal(msgs[5], MAGIC_READY_STRING) { // if not MAGIC_READY_STRING, it's an RPCResponse.
+					// the data frame is MAGIC_READY_STRING when a worker joins, and MAGIC_STOP_STRING
+					// if the app asks to stop
+					if bytes.Equal(msgs[5], MAGIC_READY_STRING) {
+
+						worker_queue.PushBack(backend_identity)
+
+					} else if bytes.Equal(msgs[5], MAGIC_STOP_STRING) {
+
+						if srv.loglevel >= clusterrpc.LOGLEVEL_INFO {
+							srv.logger.Print("Stopped balancer...")
+						}
+
+						// Send ack
+						_, err = srv.backend_router.SendMessage(backend_identity, "", "DONE")
+
+						if err != nil {
+							if srv.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
+								srv.logger.Print(err.Error())
+							}
+						}
+						return
+
+					} else {
+						worker_queue.PushBack(backend_identity)
 						_, err := srv.frontend_router.SendMessage(msgs[2:]) // [client identity, request_id, "", RPCResponse]
 
 						if err != nil && srv.loglevel >= clusterrpc.LOGLEVEL_WARNINGS {
@@ -209,7 +310,9 @@ func (srv *Server) thread(n uint, spawn bool) error {
 	err = sock.Connect(BACKEND_ROUTER_PATH)
 
 	if err != nil {
-		srv.logger.Println("Thread", n, "could not connect to Dealer, exiting!")
+		if srv.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
+			srv.logger.Println("Thread", n, "could not connect to backend router, exiting!")
+		}
 		return err
 	}
 
@@ -230,13 +333,22 @@ func (srv *Server) acceptRequests(sock *zmq.Socket, worker_identity string) erro
 	sock.SendMessage("___BOGUS_CLIENT_ID", "__BOGUS_REQ_ID", "", MAGIC_READY_STRING)
 
 	for {
-		// We're getting here the following message parts: [client_identity, data]
+		// We're getting here the following message parts: [client_identity, request_id, "", data]
 		msgs, err := sock.RecvMessageBytes(0)
 
 		if err == nil && len(msgs) == 4 {
 			if srv.loglevel >= clusterrpc.LOGLEVEL_DEBUG {
 				srv.logger.Printf("Worker #%s received message from %x\n", worker_identity, msgs[0])
 			}
+
+			if bytes.Equal(msgs[3], MAGIC_STOP_STRING) {
+				if srv.loglevel >= clusterrpc.LOGLEVEL_DEBUG {
+					srv.logger.Printf("Worker #%s stopped\n", worker_identity)
+				}
+
+				return nil
+			}
+
 			req := workerRequest{client_id: msgs[0], request_id: msgs[1], data: msgs[3]}
 			srv.handleRequest(&req, sock)
 		} else {

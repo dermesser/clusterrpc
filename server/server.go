@@ -2,6 +2,7 @@ package server
 
 import (
 	"clusterrpc"
+	"sync"
 
 	smgr "clusterrpc/securitymanager"
 	"errors"
@@ -33,6 +34,8 @@ type Server struct {
 	lameduck_state bool
 	// Do not accept requests anymore
 	loadshed_state bool
+
+	lblock sync.Mutex
 }
 
 /*
@@ -88,6 +91,8 @@ func NewServer(laddr string, port uint, worker_threads uint, loglevel clusterrpc
 		return nil, err
 	}
 
+	srv.zmq_context.SetIpv6(true)
+
 	srv.frontend_router, err = srv.zmq_context.NewSocket(zmq.ROUTER)
 
 	if err != nil {
@@ -96,8 +101,6 @@ func NewServer(laddr string, port uint, worker_threads uint, loglevel clusterrpc
 		}
 		return nil, err
 	}
-
-	srv.frontend_router.SetIpv6(true)
 
 	if err != nil {
 		if srv.loglevel >= clusterrpc.LOGLEVEL_WARNINGS {
@@ -173,6 +176,19 @@ func (srv *Server) Start() error {
 		}
 	}
 	return srv.thread(srv.n_threads-1, false)
+}
+
+// Connect to loadbalancer thread and send special stop message.
+// Does not close sockets etc.
+func (srv *Server) Stop() error {
+	return srv.stop()
+}
+
+// Close internal sockets. The server may not be used after calling Close().
+func (srv *Server) Close() {
+	srv.frontend_router.Close()
+	srv.backend_router.Close()
+	srv.zmq_context.Term()
 }
 
 /*
