@@ -1,6 +1,9 @@
 package client
 
-import "clusterrpc/proto"
+import (
+	"clusterrpc/proto"
+	"fmt"
+)
 
 type RequestError struct {
 	status proto.RPCResponse_Status
@@ -43,5 +46,5 @@ Returns a human-readable error message such as "error resource temporarily unava
 EAGAIN error)
 */
 func (e *RequestError) Message() string {
-	return e.err.Error()
+	return fmt.Sprint(e.status.String(), e.err.Error())
 }
