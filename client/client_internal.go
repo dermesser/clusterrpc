@@ -5,6 +5,7 @@ import (
 	"clusterrpc/proto"
 	smgr "clusterrpc/securitymanager"
 	"clusterrpc/server"
+	"errors"
 	"fmt"
 	"time"
 
@@ -206,7 +207,7 @@ func (cl *Client) request(cx *server.Context, trace_dest *proto.TraceInfo, data 
 		if cl.loglevel >= clusterrpc.LOGLEVEL_WARNINGS {
 			cl.logger.Printf("[%s/%d] Received status other than ok from %s: %s\n", cl.name, rqproto.GetSequenceNumber(), service+"."+endpoint, respproto.GetResponseStatus().String())
 		}
-		return nil, &RequestError{status: respproto.GetResponseStatus(), err: nil}
+		return nil, &RequestError{status: respproto.GetResponseStatus(), err: errors.New(respproto.GetErrorMessage())}
 	} else if respproto.GetResponseStatus() == proto.RPCResponse_STATUS_REDIRECT {
 		if cl.accept_redirect {
 			if respproto.GetRedirService() == "" || respproto.GetRedirEndpoint() == "" { // No different service.endpoint given, retry with same method
