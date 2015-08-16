@@ -102,3 +102,8 @@ func (cc *ConnectionCache) CleanOld(older_than time.Duration) {
 		}
 	}
 }
+
+// Closes all connections
+func (cc *ConnectionCache) CloseAll() {
+	cc.CleanOld(0 * time.Second)
+}
