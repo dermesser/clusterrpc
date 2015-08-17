@@ -18,48 +18,45 @@ type keyWriteLoader struct {
 // private key and then LoadKeys() with public_file as DONOTREAD, leaving the public key untouched)
 func (mgr *keyWriteLoader) LoadKeys(public_file, private_file string) error {
 	if public_file != DONOTREAD {
-		pubfile, err := os.Open(public_file)
-		defer pubfile.Close()
+		var err error
+		mgr.public, err = read_file(public_file)
 
 		if err != nil {
 			return err
 		}
-
-		pubkeybuf := bytes.NewBuffer(nil)
-
-		n, err := pubkeybuf.ReadFrom(pubfile)
-
-		if err != nil {
-			return err
-		}
-		if n == 0 {
-			return errors.New("Could not read public key")
-		}
-		mgr.public = pubkeybuf.String()
 	}
 
 	if private_file != DONOTREAD {
-		privfile, err := os.Open(private_file)
-		defer privfile.Close()
+		var err error
+		mgr.private, err = read_file(public_file)
 
 		if err != nil {
 			return err
 		}
-
-		privkeybuf := bytes.NewBuffer(nil)
-		n, err := privkeybuf.ReadFrom(privfile)
-
-		if err != nil {
-			return err
-		}
-		if n == 0 {
-			return errors.New("Could not read private key")
-		}
-
-		mgr.private = privkeybuf.String()
-
 	}
 	return nil
+}
+
+func read_file(filename string) (string, error) {
+	file, err := os.Open(filename)
+	defer file.Close()
+
+	if err != nil {
+		return "", err
+	}
+
+	buf := bytes.NewBuffer(nil)
+
+	n, err := buf.ReadFrom(file)
+
+	if err != nil {
+		return "", err
+	}
+	if n == 0 {
+		return "", errors.New("Could not read public key")
+	}
+
+	return buf.String(), nil
 }
 
 // Writes a keypair to the supplied files.
@@ -68,38 +65,38 @@ func (mgr *keyWriteLoader) LoadKeys(public_file, private_file string) error {
 func (mgr *keyWriteLoader) WriteKeys(public_file, private_file string) error {
 
 	if public_file != DONOTWRITE {
-		pubfile, err := os.OpenFile(public_file, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
-		defer pubfile.Close()
+		err := write_file(public_file, mgr.public)
 
 		if err != nil {
 			return err
-		}
-		n, err := pubfile.Write([]byte(mgr.public))
-
-		if err != nil {
-			return err
-		}
-		if n != len(mgr.public) {
-			return errors.New("Could not write correct number of bytes to public key file")
 		}
 	}
 
 	if private_file != DONOTWRITE {
-		privfile, err := os.OpenFile(private_file, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
-		defer privfile.Close()
+		err := write_file(private_file, mgr.private)
 
 		if err != nil {
 			return err
-		}
-
-		n, err := privfile.Write([]byte(mgr.private))
-
-		if err != nil {
-			return err
-		}
-		if n != len(mgr.private) {
-			return errors.New("Could not write correct number of bytes to private key file")
 		}
 	}
+	return nil
+}
+
+func write_file(filename, content string) error {
+	file, err := os.OpenFile(filename, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
+	defer file.Close()
+
+	if err != nil {
+		return err
+	}
+	n, err := file.Write([]byte(content))
+
+	if err != nil {
+		return err
+	}
+	if n != 40 {
+		return errors.New("Could not write correct number of bytes to public key file")
+	}
+
 	return nil
 }
