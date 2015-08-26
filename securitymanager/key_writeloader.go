@@ -28,7 +28,7 @@ func (mgr *keyWriteLoader) LoadKeys(public_file, private_file string) error {
 
 	if private_file != DONOTREAD {
 		var err error
-		mgr.private, err = read_file(public_file)
+		mgr.private, err = read_file(private_file)
 
 		if err != nil {
 			return err
