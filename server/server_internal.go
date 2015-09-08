@@ -44,7 +44,7 @@ func (srv *Server) stop() error {
 		}
 	}
 
-	sock, err := srv.zmq_context.NewSocket(zmq.REQ)
+	sock, err := zmq.NewSocket(zmq.REQ)
 
 	if srv.loglevel >= clusterrpc.LOGLEVEL_DEBUG {
 		srv.logger.Println("Stopping balancer thread...")
@@ -288,7 +288,7 @@ func (srv *Server) loadbalance() {
 func (srv *Server) thread(n uint, spawn bool) error {
 	// Yes, we're using a REQ socket for the worker
 	// see http://zguide.zeromq.org/page:all#toc72
-	sock, err := srv.zmq_context.NewSocket(zmq.REQ)
+	sock, err := zmq.NewSocket(zmq.REQ)
 
 	if err != nil {
 		if srv.loglevel >= clusterrpc.LOGLEVEL_ERRORS {

@@ -20,7 +20,6 @@ import (
 Handles incoming requests and registering of handler functions.
 */
 type Server struct {
-	zmq_context *zmq.Context
 	// Router receives new requests, dealer distributes them between the threads
 	frontend_router, backend_router *zmq.Socket
 	services                        map[string]*service
@@ -82,18 +81,9 @@ func NewServer(laddr string, port uint, worker_threads uint, loglevel clusterrpc
 	srv.RegisterHandler("__CLUSTERRPC", "Health", makeHealthHandler(&srv.lameduck_state))
 
 	var err error
-	srv.zmq_context, err = zmq.NewContext()
+	zmq.SetIpv6(true)
 
-	if err != nil {
-		if srv.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
-			srv.logger.Println("Error when creating context:", err.Error())
-		}
-		return nil, err
-	}
-
-	srv.zmq_context.SetIpv6(true)
-
-	srv.frontend_router, err = srv.zmq_context.NewSocket(zmq.ROUTER)
+	srv.frontend_router, err = zmq.NewSocket(zmq.ROUTER)
 
 	if err != nil {
 		if srv.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
@@ -132,7 +122,7 @@ func NewServer(laddr string, port uint, worker_threads uint, loglevel clusterrpc
 		return nil, err
 	}
 
-	srv.backend_router, err = srv.zmq_context.NewSocket(zmq.ROUTER)
+	srv.backend_router, err = zmq.NewSocket(zmq.ROUTER)
 
 	if err != nil {
 		if srv.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
@@ -188,7 +178,7 @@ func (srv *Server) Stop() error {
 func (srv *Server) Close() {
 	srv.frontend_router.Close()
 	srv.backend_router.Close()
-	srv.zmq_context.Term()
+	zmq.Term()
 }
 
 /*
