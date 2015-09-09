@@ -48,6 +48,8 @@ type Client struct {
 	deadline_propagation bool
 	do_healthcheck       bool
 
+	heartbeat_active bool
+
 	security_manager *smgr.ClientSecurityManager
 }
 
@@ -250,6 +252,20 @@ Send a request to the backend and check if it responds in time, i.e. whether it'
 */
 func (cl *Client) IsHealthy() bool {
 	return cl.doHealthCheck()
+}
+
+func (cl *Client) RunHeartbeat(ival time.Duration) {
+	cl.heartbeat_active = true
+
+	for cl.heartbeat_active {
+		time.Sleep(ival)
+		cl.doHeartBeat()
+	}
+
+}
+
+func (cl *Client) StopHeartbeat() {
+	cl.heartbeat_active = false
 }
 
 /*

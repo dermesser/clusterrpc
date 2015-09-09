@@ -146,6 +146,19 @@ func (cl *Client) doHealthCheck() bool {
 	}
 }
 
+func (cl *Client) doHeartBeat() bool {
+	_, err := cl.request(nil, nil, []byte{}, "__CLUSTERRPC", "Ping")
+
+	if err == nil {
+		return true
+	} else {
+		if cl.loglevel >= clusterrpc.LOGLEVEL_WARNINGS {
+			cl.logger.Printf("RPC backend doesn't respond to ping: %s\n", err.(*RequestError).Status())
+		}
+		return false
+	}
+}
+
 /*
 Prepare request and call Client.sendRequest() to send the request. Internally used only.
 */
