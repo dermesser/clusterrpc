@@ -256,8 +256,13 @@ func (cl *Client) IsHealthy() bool {
 
 func (cl *Client) RunHeartbeat(ival time.Duration) {
 	if !cl.heartbeat_active {
+
+		if cl.loglevel >= clusterrpc.LOGLEVEL_INFO {
+			cl.logger.Println("Running ping sender for client", cl.name, cl.heartbeat_active)
+		}
+		cl.heartbeat_active = true
+
 		go func() {
-			cl.heartbeat_active = true
 
 			for cl.heartbeat_active && cl.channel != nil {
 				time.Sleep(ival)
