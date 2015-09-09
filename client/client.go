@@ -256,12 +256,14 @@ func (cl *Client) IsHealthy() bool {
 
 func (cl *Client) RunHeartbeat(ival time.Duration) {
 	if !cl.heartbeat_active {
-		cl.heartbeat_active = true
+		go func() {
+			cl.heartbeat_active = true
 
-		for cl.heartbeat_active {
-			time.Sleep(ival)
-			cl.doHeartBeat()
-		}
+			for cl.heartbeat_active {
+				time.Sleep(ival)
+				cl.doHeartBeat()
+			}
+		}()
 	}
 
 }
