@@ -259,7 +259,7 @@ func (cl *Client) RunHeartbeat(ival time.Duration) {
 		go func() {
 			cl.heartbeat_active = true
 
-			for cl.heartbeat_active {
+			for cl.heartbeat_active && cl.channel != nil {
 				time.Sleep(ival)
 				cl.doHeartBeat()
 			}
