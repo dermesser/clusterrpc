@@ -68,17 +68,19 @@ func NewServer(laddr string, port uint, worker_threads uint, loglevel clusterrpc
 	srv.services = make(map[string]*service)
 	srv.logger = log.New(os.Stderr, "clusterrpc.Server: ", log.LstdFlags|log.Lmicroseconds)
 	srv.loglevel = loglevel
-	srv.n_threads = worker_threads
 	srv.timeout = time.Second * 3
 
 	if worker_threads <= 0 {
 		if srv.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
-			srv.logger.Println("Number of threads must be 1 or higher")
+			srv.logger.Println("Number of threads must be 1 or higher, setting to 1")
 		}
-		return nil, errors.New("Number of threads must be 1 or higher")
+		worker_threads = 1
 	}
 
+	srv.n_threads = worker_threads
+
 	srv.RegisterHandler("__CLUSTERRPC", "Health", makeHealthHandler(&srv.lameduck_state))
+	srv.RegisterHandler("__CLUSTERRPC", "Ping", pingHandler)
 
 	var err error
 	zmq.SetIpv6(true)

@@ -20,3 +20,8 @@ func makeHealthHandler(lameduck_state *bool) Handler {
 		}
 	}
 }
+
+func pingHandler(ctx *Context) {
+	ctx.Success([]byte{})
+	return
+}
