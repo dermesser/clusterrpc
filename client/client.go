@@ -277,6 +277,18 @@ func (cl *Client) StopHeartbeat() {
 	cl.heartbeat_active = false
 }
 
+func (cl *Client) formatRemoteHosts() string {
+	if len(cl.raddr) == 1 {
+		return cl.raddr[0]
+	} else {
+		str := ""
+		for _, h := range cl.raddr {
+			str += h + ","
+		}
+		return str
+	}
+}
+
 /*
 Call a remote procedure service.endpoint with data as input.
 

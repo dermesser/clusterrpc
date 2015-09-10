@@ -287,7 +287,7 @@ func (cl *Client) sendRequest(rqproto *proto.RPCRequest) ([]byte, error) {
 			}
 		} else {
 			if cl.loglevel >= clusterrpc.LOGLEVEL_DEBUG {
-				cl.logger.Printf("[%s/%d] Sent request to %s\n", cl.name, rqproto.GetSequenceNumber(), rqproto.GetSrvc()+"."+rqproto.GetProcedure())
+				cl.logger.Printf("[%s/%d] Sent request to %s: %s\n", cl.name, rqproto.GetSequenceNumber(), cl.formatRemoteHosts(), rqproto.GetSrvc()+"."+rqproto.GetProcedure())
 			}
 			break
 		}
