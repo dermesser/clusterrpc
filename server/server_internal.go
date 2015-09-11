@@ -156,10 +156,12 @@ func (srv *Server) loadbalance() {
 						_, err = srv.backend_router.SendMessage(worker_id.Value.([]byte), "", msgs) // [worker identity, "", client identity, "", RPCRequest]
 						worker_queue.Remove(worker_id)
 
-						if err.(zmq.Errno) != zmq.EHOSTUNREACH {
-							log.CRPC_log(log.LOGLEVEL_ERRORS, "Error when sending to backend router:", err.Error())
-						} else {
-							log.CRPC_log(log.LOGLEVEL_ERRORS, "Could not route message, identity", fmt.Sprintf("%x", msgs[0]), ", to frontend")
+						if err != nil {
+							if err.(zmq.Errno) != zmq.EHOSTUNREACH {
+								log.CRPC_log(log.LOGLEVEL_ERRORS, "Error when sending to backend router:", err.Error())
+							} else {
+								log.CRPC_log(log.LOGLEVEL_ERRORS, "Could not route message, identity", fmt.Sprintf("%x", msgs[0]), ", to frontend")
+							}
 						}
 
 					} else if uint(todo_queue.Len()) < srv.n_threads*OUTSTANDING_REQUESTS_PER_THREAD { // We're only allowing so many queued requests to prevent from complete overloading
@@ -226,7 +228,7 @@ func (srv *Server) loadbalance() {
 							} else if err.(zmq.Errno) == zmq.EHOSTUNREACH {
 								// routing is mandatory.
 								// Fails when the client has already disconnected
-								log.CRPC_log(log.LOGLEVEL_WARNINGS, "Could not route message, worker identity", fmt.Sprintf("%x", msgs[0]), "to frontend\n")
+								log.CRPC_log(log.LOGLEVEL_WARNINGS, "Could not route message, worker identity", fmt.Sprintf("%x", msgs[0]), "to frontend")
 							}
 						}
 					}
@@ -297,10 +299,10 @@ func (srv *Server) acceptRequests(sock *zmq.Socket, worker_identity string) erro
 		msgs, err := sock.RecvMessageBytes(0)
 
 		if err == nil && len(msgs) == 4 {
-			log.CRPC_log(log.LOGLEVEL_DEBUG, fmt.Sprintf("Worker #%s received message from %x\n", worker_identity, msgs[0]))
+			log.CRPC_log(log.LOGLEVEL_DEBUG, fmt.Sprintf("Worker #%s received message from %x", worker_identity, msgs[0]))
 
 			if bytes.Equal(msgs[3], MAGIC_STOP_STRING) {
-				log.CRPC_log(log.LOGLEVEL_DEBUG, fmt.Sprintf("Worker #%s stopped\n", worker_identity))
+				log.CRPC_log(log.LOGLEVEL_DEBUG, fmt.Sprintf("Worker #%s stopped", worker_identity))
 
 				return nil
 			}
@@ -354,21 +356,21 @@ func (srv *Server) handleRequest(request *workerRequest, sock *zmq.Socket) {
 	srvc, srvc_found := srv.services[rqproto.GetSrvc()]
 
 	if !srvc_found {
-		log.CRPC_log(log.LOGLEVEL_WARNINGS, fmt.Sprintf("[%x/%s/%d] NOT_FOUND response to request for service %s\n", request.client_id, caller_id, rqproto.GetSequenceNumber(), rqproto.GetSrvc()))
+		log.CRPC_log(log.LOGLEVEL_WARNINGS, fmt.Sprintf("[%x/%s/%d] NOT_FOUND response to request for service %s", request.client_id, caller_id, rqproto.GetSequenceNumber(), rqproto.GetSrvc()))
 
 		srv.sendError(sock, rqproto, proto.RPCResponse_STATUS_NOT_FOUND, request)
 		return
 	} else {
 		if handler, endpoint_found := srvc.endpoints[rqproto.GetProcedure()]; !endpoint_found {
 			log.CRPC_log(log.LOGLEVEL_WARNINGS,
-				fmt.Sprintf("[%x/%s/%d] NOT_FOUND response to request for endpoint %s\n",
+				fmt.Sprintf("[%x/%s/%d] NOT_FOUND response to request for endpoint %s",
 					request.client_id, caller_id, rqproto.GetSequenceNumber(), rqproto.GetSrvc()+"."+rqproto.GetProcedure()))
 
 			srv.sendError(sock, rqproto, proto.RPCResponse_STATUS_NOT_FOUND, request)
 			return
 		} else {
 			log.CRPC_log(log.LOGLEVEL_DEBUG,
-				fmt.Sprintf("[%x/%s/%d] Calling endpoint %s.%s...\n",
+				fmt.Sprintf("[%x/%s/%d] Calling endpoint %s.%s...",
 					request.client_id, caller_id, rqproto.GetSequenceNumber(), rqproto.GetSrvc(), rqproto.GetProcedure()))
 
 			cx := srv.newContext(rqproto)
@@ -385,7 +387,7 @@ func (srv *Server) handleRequest(request *workerRequest, sock *zmq.Socket) {
 				srv.sendError(sock, rqproto, proto.RPCResponse_STATUS_SERVER_ERROR, request)
 
 				log.CRPC_log(log.LOGLEVEL_ERRORS,
-					fmt.Sprintf("[%x/%s/%d] Error when serializing RPCResponse: %s\n",
+					fmt.Sprintf("[%x/%s/%d] Error when serializing RPCResponse: %s",
 						request.client_id, caller_id, rqproto.GetSequenceNumber(), pberr.Error()))
 
 			} else {
@@ -394,13 +396,13 @@ func (srv *Server) handleRequest(request *workerRequest, sock *zmq.Socket) {
 
 				if err != nil {
 					log.CRPC_log(log.LOGLEVEL_WARNINGS,
-						fmt.Sprintf("[%x/%s/%d] Error when sending response; %s\n",
+						fmt.Sprintf("[%x/%s/%d] Error when sending response; %s",
 							request.client_id, caller_id, rqproto.GetSequenceNumber(), err.Error()))
 
 					return
 				}
 
-				log.CRPC_log(log.LOGLEVEL_DEBUG, fmt.Sprintf("[%x/%s/%d] Sent response.\n", request.client_id, caller_id, rqproto.GetSequenceNumber()))
+				log.CRPC_log(log.LOGLEVEL_DEBUG, fmt.Sprintf("[%x/%s/%d] Sent response.", request.client_id, caller_id, rqproto.GetSequenceNumber()))
 
 			}
 		}

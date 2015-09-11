@@ -136,7 +136,7 @@ func (cl *Client) doHealthCheck() bool {
 		return true
 	} else {
 
-		log.CRPC_log(log.LOGLEVEL_WARNINGS, "RPC backend is unhealthy: %s\n", err.(*RequestError).Status())
+		log.CRPC_log(log.LOGLEVEL_WARNINGS, "RPC backend is unhealthy: %s", err.(*RequestError).Status())
 
 		return false
 	}
@@ -148,7 +148,7 @@ func (cl *Client) doHeartBeat() bool {
 	if err == nil {
 		return true
 	} else {
-		log.CRPC_log(log.LOGLEVEL_WARNINGS, "RPC backend doesn't respond to ping: %s\n", err.(*RequestError).Status())
+		log.CRPC_log(log.LOGLEVEL_WARNINGS, "RPC backend doesn't respond to ping: %s", err.(*RequestError).Status())
 		return false
 	}
 }
@@ -196,7 +196,7 @@ func (cl *Client) request(cx *server.Context, trace_dest *proto.TraceInfo, data 
 	err = respproto.Unmarshal(msg)
 
 	if err != nil {
-		log.CRPC_log(log.LOGLEVEL_ERRORS, fmt.Sprintf("[%s/%d] Error when unmarshaling response: %s\n", cl.name, rqproto.GetSequenceNumber(), err.Error()))
+		log.CRPC_log(log.LOGLEVEL_ERRORS, fmt.Sprintf("[%s/%d] Error when unmarshaling response: %s", cl.name, rqproto.GetSequenceNumber(), err.Error()))
 		return nil, &RequestError{status: proto.RPCResponse_STATUS_CLIENT_REQUEST_ERROR, err: err}
 	}
 
@@ -211,7 +211,7 @@ func (cl *Client) request(cx *server.Context, trace_dest *proto.TraceInfo, data 
 	if respproto.GetResponseStatus() != proto.RPCResponse_STATUS_OK && respproto.GetResponseStatus() != proto.RPCResponse_STATUS_REDIRECT {
 
 		log.CRPC_log(log.LOGLEVEL_WARNINGS,
-			fmt.Sprintf("[%s/%d] Received status other than ok from %s: %s\n",
+			fmt.Sprintf("[%s/%d] Received status other than ok from %s: %s",
 				cl.name, rqproto.GetSequenceNumber(), service+"."+endpoint, respproto.GetResponseStatus().String()))
 
 		return nil, &RequestError{status: respproto.GetResponseStatus(), err: errors.New(respproto.GetErrorMessage())}
@@ -226,7 +226,7 @@ func (cl *Client) request(cx *server.Context, trace_dest *proto.TraceInfo, data 
 					cl, trace_dest, nil)
 			}
 		} else {
-			log.CRPC_log(log.LOGLEVEL_ERRORS, fmt.Sprintf("[%s/%d] Could not follow redirect -- second server redirected, too\n", cl.name, rqproto.GetSequenceNumber()))
+			log.CRPC_log(log.LOGLEVEL_ERRORS, fmt.Sprintf("[%s/%d] Could not follow redirect -- second server redirected, too", cl.name, rqproto.GetSequenceNumber()))
 			return nil, &RequestError{status: proto.RPCResponse_STATUS_REDIRECT_TOO_OFTEN, err: nil}
 		}
 	}
@@ -251,7 +251,7 @@ func (cl *Client) sendRequest(rqproto *proto.RPCRequest) ([]byte, error) {
 		_, err := cl.channel.SendBytes(rq_serialized, 0)
 
 		if err != nil {
-			log.CRPC_log(log.LOGLEVEL_ERRORS, fmt.Sprintf("[%s/%d] Could not send message to %s. Error: %s\n", cl.name, rqproto.GetSequenceNumber(), rqproto.GetSrvc()+"."+rqproto.GetProcedure(), err.Error()))
+			log.CRPC_log(log.LOGLEVEL_ERRORS, fmt.Sprintf("[%s/%d] Could not send message to %s. Error: %s", cl.name, rqproto.GetSequenceNumber(), rqproto.GetSrvc()+"."+rqproto.GetProcedure(), err.Error()))
 
 			if err.(zmq.Errno) == 11 { // EAGAIN
 
@@ -276,7 +276,7 @@ func (cl *Client) sendRequest(rqproto *proto.RPCRequest) ([]byte, error) {
 			}
 		} else {
 			log.CRPC_log(log.LOGLEVEL_DEBUG,
-				fmt.Sprintf("[%s/%d] Sent request to %s: %s\n",
+				fmt.Sprintf("[%s/%d] Sent request to %s: %s",
 					cl.name, rqproto.GetSequenceNumber(), cl.formatRemoteHosts(), rqproto.GetSrvc()+"."+rqproto.GetProcedure()))
 			break
 		}
@@ -287,7 +287,7 @@ func (cl *Client) sendRequest(rqproto *proto.RPCRequest) ([]byte, error) {
 	if err != nil {
 
 		log.CRPC_log(log.LOGLEVEL_ERRORS,
-			fmt.Sprintf("[%s/%d] Could not receive response from %s, error %s\n",
+			fmt.Sprintf("[%s/%d] Could not receive response from %s, error %s",
 				cl.name, rqproto.GetSequenceNumber(), rqproto.GetSrvc()+"."+rqproto.GetProcedure(), err.Error()))
 
 		if 11 == err.(zmq.Errno) { // We have no retries left.
@@ -298,21 +298,21 @@ func (cl *Client) sendRequest(rqproto *proto.RPCRequest) ([]byte, error) {
 			}
 
 			log.CRPC_log(log.LOGLEVEL_ERRORS,
-				fmt.Sprintf("[%s/%d] Receive timeout occurred, not trying again\n",
+				fmt.Sprintf("[%s/%d] Receive timeout occurred, not trying again",
 					cl.name, rqproto.GetSequenceNumber()))
 
 			return nil, &RequestError{status: proto.RPCResponse_STATUS_TIMEOUT, err: err}
 		} else {
 
 			log.CRPC_log(log.LOGLEVEL_ERRORS,
-				fmt.Sprintf("[%s/%d] Network error: %s\n",
+				fmt.Sprintf("[%s/%d] Network error: %s",
 					cl.name, rqproto.GetSequenceNumber(), err.Error()))
 
 			return nil, &RequestError{status: proto.RPCResponse_STATUS_CLIENT_NETWORK_ERROR, err: err}
 		}
 	}
 	log.CRPC_log(log.LOGLEVEL_DEBUG,
-		fmt.Sprintf("[%s/%d] Received response from %s\n",
+		fmt.Sprintf("[%s/%d] Received response from %s",
 			cl.name, rqproto.GetSequenceNumber(), rqproto.GetSrvc()+"."+rqproto.GetProcedure()))
 
 	return msg, nil
