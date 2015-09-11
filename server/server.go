@@ -1,16 +1,12 @@
 package server
 
 import (
-	"clusterrpc"
 	"sync"
 
+	"clusterrpc/log"
 	smgr "clusterrpc/securitymanager"
 	"errors"
 	"fmt"
-	"io"
-	"io/ioutil"
-	"log"
-	"os"
 	"time"
 
 	zmq "github.com/pebbe/zmq4"
@@ -23,10 +19,8 @@ type Server struct {
 	// Router receives new requests, dealer distributes them between the threads
 	frontend_router, backend_router *zmq.Socket
 	services                        map[string]*service
-	logger                          *log.Logger
 	// The timeout only applies on client connections (R/W), not the Listener
 	timeout      time.Duration
-	loglevel     clusterrpc.LOGLEVEL_T
 	n_threads    uint
 	machine_name string
 	// Respond "no" to healthchecks
@@ -61,19 +55,13 @@ Use the setter functions described below before calling Start(), otherwise they 
 be ignored.
 
 */
-func NewServer(laddr string, port uint, worker_threads uint, loglevel clusterrpc.LOGLEVEL_T,
-	security_manager *smgr.ServerSecurityManager) (*Server, error) {
+func NewServer(laddr string, port uint, worker_threads uint, security_manager *smgr.ServerSecurityManager) (*Server, error) {
 
 	srv := new(Server)
 	srv.services = make(map[string]*service)
-	srv.logger = log.New(os.Stderr, "clusterrpc.Server: ", log.LstdFlags|log.Lmicroseconds)
-	srv.loglevel = loglevel
 	srv.timeout = time.Second * 3
 
 	if worker_threads <= 0 {
-		if srv.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
-			srv.logger.Println("Number of threads must be 1 or higher, setting to 1")
-		}
 		worker_threads = 1
 	}
 
@@ -88,16 +76,12 @@ func NewServer(laddr string, port uint, worker_threads uint, loglevel clusterrpc
 	srv.frontend_router, err = zmq.NewSocket(zmq.ROUTER)
 
 	if err != nil {
-		if srv.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
-			srv.logger.Println("Error when creating Router socket:", err.Error())
-		}
+		log.CRPC_log(log.LOGLEVEL_ERRORS, "Error when creating Router socket:", err.Error())
 		return nil, err
 	}
 
 	if err != nil {
-		if srv.loglevel >= clusterrpc.LOGLEVEL_WARNINGS {
-			srv.logger.Println("Could not enable IPv6 on frontend router:", err.Error())
-		}
+		log.CRPC_log(log.LOGLEVEL_WARNINGS, "Could not enable IPv6 on frontend router:", err.Error())
 		return nil, err
 	}
 
@@ -105,9 +89,7 @@ func NewServer(laddr string, port uint, worker_threads uint, loglevel clusterrpc
 	srv.frontend_router.SetSndtimeo(srv.timeout)
 	srv.frontend_router.SetRcvtimeo(srv.timeout)
 
-	if srv.loglevel >= clusterrpc.LOGLEVEL_INFO {
-		srv.logger.Println("Binding frontend to TCP address", fmt.Sprintf("tcp://%s:%d", laddr, port))
-	}
+	log.CRPC_log(log.LOGLEVEL_INFO, "Binding frontend to TCP address", fmt.Sprintf("tcp://%s:%d", laddr, port))
 
 	err = security_manager.ApplyToServerSocket(srv.frontend_router)
 
@@ -118,18 +100,14 @@ func NewServer(laddr string, port uint, worker_threads uint, loglevel clusterrpc
 	err = srv.frontend_router.Bind(fmt.Sprintf("tcp://%s:%d", laddr, port))
 
 	if err != nil {
-		if srv.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
-			srv.logger.Println("Error when binding Router socket:", err.Error())
-		}
+		log.CRPC_log(log.LOGLEVEL_ERRORS, "Error when binding Router socket:", err.Error())
 		return nil, err
 	}
 
 	srv.backend_router, err = zmq.NewSocket(zmq.ROUTER)
 
 	if err != nil {
-		if srv.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
-			srv.logger.Println("Error when creating backend router socket:", err.Error())
-		}
+		log.CRPC_log(log.LOGLEVEL_ERRORS, "Error when creating backend router socket:", err.Error())
 		srv = nil
 		return nil, err
 	}
@@ -137,9 +115,7 @@ func NewServer(laddr string, port uint, worker_threads uint, loglevel clusterrpc
 	err = srv.backend_router.Bind(BACKEND_ROUTER_PATH)
 
 	if err != nil {
-		if srv.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
-			srv.logger.Println("Error when binding backend router socket:", err.Error())
-		}
+		log.CRPC_log(log.LOGLEVEL_ERRORS, "Error when binding backend router socket:", err.Error())
 		srv = nil
 		return nil, err
 	}
@@ -184,20 +160,6 @@ func (srv *Server) Close() {
 }
 
 /*
-Set logging device.
-*/
-func (srv *Server) SetLoggingOutput(w io.Writer) {
-	srv.logger = log.New(w, srv.logger.Prefix(), srv.logger.Flags())
-}
-
-/*
-Set logger.
-*/
-func (srv *Server) SetLogger(l *log.Logger) {
-	srv.logger = l
-}
-
-/*
 Set timeout for the routers used by the loadbalancer (the worker sockets don't really need a timeout
 because they're communicating via inproc://)
 */
@@ -208,20 +170,6 @@ func (srv *Server) SetTimeout(d time.Duration) {
 	srv.backend_router.SetSndtimeo(srv.timeout)
 	srv.frontend_router.SetSndtimeo(srv.timeout)
 	srv.frontend_router.SetRcvtimeo(srv.timeout)
-}
-
-/*
-Disable logging.
-*/
-func (srv *Server) DisableLogging() {
-	srv.logger = log.New(ioutil.Discard, srv.logger.Prefix(), srv.logger.Flags())
-}
-
-/*
-Set loglevel of this server.
-*/
-func (srv *Server) SetLoglevel(l clusterrpc.LOGLEVEL_T) {
-	srv.loglevel = l
 }
 
 // Set the machine name as shown in traces (os.Hostname() can be used to obtain the DNS name)
@@ -243,16 +191,13 @@ func (srv *Server) RegisterHandler(svc, endpoint string, handler Handler) (err e
 		srv.services[svc] = new(service)
 		srv.services[svc].endpoints = make(map[string]Handler)
 	} else if _, ok = srv.services[svc].endpoints[endpoint]; ok {
-		if srv.loglevel >= clusterrpc.LOGLEVEL_WARNINGS {
-			srv.logger.Println("Trying to register existing endpoint:", svc+"."+endpoint)
-		}
+		log.CRPC_log(log.LOGLEVEL_WARNINGS, "Trying to register existing endpoint:", svc+"."+endpoint)
 		err = errors.New("Endpoint already registered; not overwritten")
 		return
 	}
 
-	if srv.loglevel >= clusterrpc.LOGLEVEL_DEBUG {
-		srv.logger.Println("Registered endpoint:", svc+"."+endpoint)
-	}
+	log.CRPC_log(log.LOGLEVEL_INFO, "Registered endpoint:", svc+"."+endpoint)
+
 	srv.services[svc].endpoints[endpoint] = handler
 	err = nil
 	return
@@ -269,21 +214,18 @@ func (srv *Server) UnregisterHandler(svc, endpoint string) (err error) {
 	_, ok := srv.services[svc]
 
 	if !ok {
-		if srv.loglevel >= clusterrpc.LOGLEVEL_WARNINGS {
-			srv.logger.Println("Trying to unregister non-existing endpoint: ", svc+"."+endpoint)
-		}
+		log.CRPC_log(log.LOGLEVEL_WARNINGS, "Trying to unregister non-existing endpoint: ", svc+"."+endpoint)
+
 		err = errors.New("No such service")
 		return
 	} else if _, ok = srv.services[svc].endpoints[endpoint]; !ok {
-		if srv.loglevel >= clusterrpc.LOGLEVEL_WARNINGS {
-			srv.logger.Println("Trying to unregister non-existing endpoint: ", svc+"."+endpoint)
-		}
+		log.CRPC_log(log.LOGLEVEL_WARNINGS, "Trying to unregister non-existing endpoint: ", svc+"."+endpoint)
+
 		err = errors.New("No such endpoint")
 		return
 	} else {
-		if srv.loglevel >= clusterrpc.LOGLEVEL_DEBUG {
-			srv.logger.Println("Registered endpoint: ", svc+"."+endpoint)
-		}
+		log.CRPC_log(log.LOGLEVEL_INFO, "Unregistered endpoint: ", svc+"."+endpoint)
+
 		delete(srv.services[svc].endpoints, endpoint)
 	}
 

@@ -1,11 +1,8 @@
 package client
 
 import (
-	"clusterrpc"
+	"clusterrpc/log"
 	smgr "clusterrpc/securitymanager"
-	"io"
-	"log"
-	"os"
 	"time"
 )
 
@@ -23,9 +20,7 @@ type AsyncClient struct {
 	request_queue chan *asyncRequest
 	qlength       uint
 
-	logger   *log.Logger
-	loglevel clusterrpc.LOGLEVEL_T
-	client   *Client
+	client *Client
 }
 
 /*
@@ -38,19 +33,17 @@ higher parallelism can simply be achieved by using multiple AsyncClients.
 client_name is an arbitrary name that can be used to identify this client at the server (e.g.
 in logs)
 */
-func NewAsyncClient(client_name, raddr string, rport, queue_length uint, loglevel clusterrpc.LOGLEVEL_T,
+func NewAsyncClient(client_name, raddr string, rport, queue_length uint,
 	security_manager *smgr.ClientSecurityManager) (*AsyncClient, error) {
 
 	cl := new(AsyncClient)
-	cl.logger = log.New(os.Stderr, "clusterrpc.AsyncClient "+client_name+": ", log.Lmicroseconds)
-	cl.loglevel = loglevel
 	cl.qlength = queue_length
 
 	var err error
-	cl.client, err = NewClient(client_name, raddr, rport, cl.loglevel, security_manager)
+	cl.client, err = NewClient(client_name, raddr, rport, security_manager)
 
 	if err != nil {
-		cl.logger.Println("Synchronous client constructor returned error:", err.Error())
+		log.CRPC_log(log.LOGLEVEL_ERRORS, "Synchronous client constructor returned error:", err.Error())
 		return nil, err
 	}
 
@@ -58,29 +51,6 @@ func NewAsyncClient(client_name, raddr string, rport, queue_length uint, logleve
 	go cl.startThread()
 
 	return cl, nil
-}
-
-/*
-Change the writer to which the client logs operations.
-*/
-func (cl *AsyncClient) SetLoggingOutput(w io.Writer) {
-
-	cl.logger = log.New(w, cl.logger.Prefix(), cl.logger.Flags())
-}
-
-/*
-Set the logger of the client to a custom one.
-*/
-func (cl *AsyncClient) SetLogger(l *log.Logger) {
-	cl.logger = l
-}
-
-/*
-Define which errors/situations to log
-*/
-func (cl *AsyncClient) SetLoglevel(ll clusterrpc.LOGLEVEL_T) {
-	cl.loglevel = ll
-	cl.client.loglevel = ll
 }
 
 /*
@@ -102,8 +72,8 @@ func (cl *AsyncClient) startThread() {
 			return
 		}
 
-		if cl.loglevel >= clusterrpc.LOGLEVEL_WARNINGS && float64(len(cl.request_queue)) > 0.7*float64(cl.qlength) {
-			cl.logger.Println("AsyncClient", cl.client.name, "Warning: Queue is fuller than 70% of its capacity!")
+		if float64(len(cl.request_queue)) > 0.7*float64(cl.qlength) {
+			log.CRPC_log(log.LOGLEVEL_WARNINGS, "AsyncClient", cl.client.name, "Warning: Queue is fuller than 70% of its capacity!")
 		}
 
 		rsp, err := cl.client.Request(rq.data, rq.service, rq.endpoint, nil)

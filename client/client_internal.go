@@ -1,7 +1,7 @@
 package client
 
 import (
-	"clusterrpc"
+	"clusterrpc/log"
 	"clusterrpc/proto"
 	smgr "clusterrpc/securitymanager"
 	"clusterrpc/server"
@@ -24,14 +24,15 @@ func (cl *Client) createChannel() error {
 	cl.channel, err = zmq.NewSocket(zmq.REQ)
 
 	if err != nil {
-		cl.logger.Println("Error when creating Req socket:", err.Error())
+
+		log.CRPC_log(log.LOGLEVEL_ERRORS, "Error when creating Req socket:", err.Error())
 		return &RequestError{status: proto.RPCResponse_STATUS_CLIENT_NETWORK_ERROR, err: err}
 	}
 
 	err = cl.security_manager.ApplyToClientSocket(cl.channel)
 
 	if err != nil {
-		cl.logger.Println("Error when setting up security:", err.Error())
+		log.CRPC_log(log.LOGLEVEL_ERRORS, "Error when setting up security:", err.Error())
 		return &RequestError{status: proto.RPCResponse_STATUS_CLIENT_NETWORK_ERROR, err: err}
 	}
 
@@ -64,16 +65,14 @@ func (cl *Client) connectToPeers() error {
 
 		if err != nil {
 			if len(cl.raddr) < 2 { // only return error if the only connection of this REQ socket couldn't be established
-				if cl.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
-					cl.logger.Println("Could not establish connection to single peer;",
-						err.Error, fmt.Sprintf("tcp://%s:%d", cl.raddr[i], cl.rport[i]))
-				}
+
+				log.CRPC_log(log.LOGLEVEL_ERRORS, "Could not establish connection to single peer;",
+					err.Error, fmt.Sprintf("tcp://%s:%d", cl.raddr[i], cl.rport[i]))
+
 				return &RequestError{status: proto.RPCResponse_STATUS_CLIENT_NETWORK_ERROR, err: err}
 			} else {
-				if cl.loglevel >= clusterrpc.LOGLEVEL_WARNINGS {
-					cl.logger.Println("Error when connecting Req socket:",
-						err.Error(), fmt.Sprintf("tcp://%s:%d", cl.raddr[i], cl.rport[i]))
-				}
+				log.CRPC_log(log.LOGLEVEL_ERRORS, "Error when connecting Req socket:",
+					err.Error(), fmt.Sprintf("tcp://%s:%d", cl.raddr[i], cl.rport[i]))
 			}
 		}
 	}
@@ -89,19 +88,16 @@ func requestRedirect(raddr string, rport uint, service, endpoint string, request
 	var err error
 
 	if settings_cl != nil {
-		cl, err = NewClient(settings_cl.name+"_redir", raddr, rport, settings_cl.loglevel,
-			settings_cl.security_manager)
+		cl, err = NewClient(settings_cl.name+"_redir", raddr, rport, settings_cl.security_manager)
 
 		if err != nil {
 			return nil, &RequestError{status: proto.RPCResponse_STATUS_CLIENT_REQUEST_ERROR, err: err}
 		}
 
-		cl.loglevel = settings_cl.loglevel
-		cl.logger = settings_cl.logger
 		cl.SetTimeout(settings_cl.timeout)
 		cl.accept_redirect = allow_redirect
 	} else {
-		cl, err = NewClient("anonymous_tmp_client", raddr, rport, clusterrpc.LOGLEVEL_WARNINGS, security_manager)
+		cl, err = NewClient("anonymous_tmp_client", raddr, rport, security_manager)
 
 		if err != nil {
 			return nil, &RequestError{status: proto.RPCResponse_STATUS_CLIENT_REQUEST_ERROR, err: err}
@@ -139,9 +135,9 @@ func (cl *Client) doHealthCheck() bool {
 	if err == nil {
 		return true
 	} else {
-		if cl.loglevel >= clusterrpc.LOGLEVEL_WARNINGS {
-			cl.logger.Printf("RPC backend is unhealthy: %s\n", err.(*RequestError).Status())
-		}
+
+		log.CRPC_log(log.LOGLEVEL_WARNINGS, "RPC backend is unhealthy: %s\n", err.(*RequestError).Status())
+
 		return false
 	}
 }
@@ -152,9 +148,7 @@ func (cl *Client) doHeartBeat() bool {
 	if err == nil {
 		return true
 	} else {
-		if cl.loglevel >= clusterrpc.LOGLEVEL_WARNINGS {
-			cl.logger.Printf("RPC backend doesn't respond to ping: %s\n", err.(*RequestError).Status())
-		}
+		log.CRPC_log(log.LOGLEVEL_WARNINGS, "RPC backend doesn't respond to ping: %s\n", err.(*RequestError).Status())
 		return false
 	}
 }
@@ -202,9 +196,7 @@ func (cl *Client) request(cx *server.Context, trace_dest *proto.TraceInfo, data 
 	err = respproto.Unmarshal(msg)
 
 	if err != nil {
-		if cl.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
-			cl.logger.Printf("[%s/%d] Error when unmarshaling response: %s\n", cl.name, rqproto.GetSequenceNumber(), err.Error())
-		}
+		log.CRPC_log(log.LOGLEVEL_ERRORS, fmt.Sprintf("[%s/%d] Error when unmarshaling response: %s\n", cl.name, rqproto.GetSequenceNumber(), err.Error()))
 		return nil, &RequestError{status: proto.RPCResponse_STATUS_CLIENT_REQUEST_ERROR, err: err}
 	}
 
@@ -217,9 +209,11 @@ func (cl *Client) request(cx *server.Context, trace_dest *proto.TraceInfo, data 
 	}
 
 	if respproto.GetResponseStatus() != proto.RPCResponse_STATUS_OK && respproto.GetResponseStatus() != proto.RPCResponse_STATUS_REDIRECT {
-		if cl.loglevel >= clusterrpc.LOGLEVEL_WARNINGS {
-			cl.logger.Printf("[%s/%d] Received status other than ok from %s: %s\n", cl.name, rqproto.GetSequenceNumber(), service+"."+endpoint, respproto.GetResponseStatus().String())
-		}
+
+		log.CRPC_log(log.LOGLEVEL_WARNINGS,
+			fmt.Sprintf("[%s/%d] Received status other than ok from %s: %s\n",
+				cl.name, rqproto.GetSequenceNumber(), service+"."+endpoint, respproto.GetResponseStatus().String()))
+
 		return nil, &RequestError{status: respproto.GetResponseStatus(), err: errors.New(respproto.GetErrorMessage())}
 	} else if respproto.GetResponseStatus() == proto.RPCResponse_STATUS_REDIRECT {
 		if cl.accept_redirect {
@@ -232,9 +226,7 @@ func (cl *Client) request(cx *server.Context, trace_dest *proto.TraceInfo, data 
 					cl, trace_dest, nil)
 			}
 		} else {
-			if cl.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
-				cl.logger.Printf("[%s/%d] Could not follow redirect -- second server redirected, too\n", cl.name, rqproto.GetSequenceNumber())
-			}
+			log.CRPC_log(log.LOGLEVEL_ERRORS, fmt.Sprintf("[%s/%d] Could not follow redirect -- second server redirected, too\n", cl.name, rqproto.GetSequenceNumber()))
 			return nil, &RequestError{status: proto.RPCResponse_STATUS_REDIRECT_TOO_OFTEN, err: nil}
 		}
 	}
@@ -251,9 +243,7 @@ func (cl *Client) sendRequest(rqproto *proto.RPCRequest) ([]byte, error) {
 	rq_serialized, pberr := rqproto.Marshal()
 
 	if pberr != nil {
-		if cl.loglevel >= clusterrpc.LOGLEVEL_WARNINGS {
-			cl.logger.Println("PB error!", pberr.Error())
-		}
+		log.CRPC_log(log.LOGLEVEL_WARNINGS, "Error unserializing protobuf:", pberr.Error())
 		return nil, &RequestError{status: proto.RPCResponse_STATUS_CLIENT_REQUEST_ERROR, err: pberr}
 	}
 
@@ -261,9 +251,8 @@ func (cl *Client) sendRequest(rqproto *proto.RPCRequest) ([]byte, error) {
 		_, err := cl.channel.SendBytes(rq_serialized, 0)
 
 		if err != nil {
-			if cl.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
-				cl.logger.Printf("[%s/%d] Could not send message to %s. Error: %s\n", cl.name, rqproto.GetSequenceNumber(), rqproto.GetSrvc()+"."+rqproto.GetProcedure(), err.Error())
-			}
+			log.CRPC_log(log.LOGLEVEL_ERRORS, fmt.Sprintf("[%s/%d] Could not send message to %s. Error: %s\n", cl.name, rqproto.GetSequenceNumber(), rqproto.GetSrvc()+"."+rqproto.GetProcedure(), err.Error()))
+
 			if err.(zmq.Errno) == 11 { // EAGAIN
 
 				if len(cl.raddr) < 2 {
@@ -286,9 +275,9 @@ func (cl *Client) sendRequest(rqproto *proto.RPCRequest) ([]byte, error) {
 				return nil, &RequestError{status: proto.RPCResponse_STATUS_CLIENT_NETWORK_ERROR, err: err}
 			}
 		} else {
-			if cl.loglevel >= clusterrpc.LOGLEVEL_DEBUG {
-				cl.logger.Printf("[%s/%d] Sent request to %s: %s\n", cl.name, rqproto.GetSequenceNumber(), cl.formatRemoteHosts(), rqproto.GetSrvc()+"."+rqproto.GetProcedure())
-			}
+			log.CRPC_log(log.LOGLEVEL_DEBUG,
+				fmt.Sprintf("[%s/%d] Sent request to %s: %s\n",
+					cl.name, rqproto.GetSequenceNumber(), cl.formatRemoteHosts(), rqproto.GetSrvc()+"."+rqproto.GetProcedure()))
 			break
 		}
 	}
@@ -296,29 +285,35 @@ func (cl *Client) sendRequest(rqproto *proto.RPCRequest) ([]byte, error) {
 	msg, err := cl.channel.RecvBytes(0)
 
 	if err != nil {
-		if cl.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
-			cl.logger.Printf("[%s/%d] Could not receive response from %s, error %s\n", cl.name, rqproto.GetSequenceNumber(), rqproto.GetSrvc()+"."+rqproto.GetProcedure(), err.Error())
-		}
+
+		log.CRPC_log(log.LOGLEVEL_ERRORS,
+			fmt.Sprintf("[%s/%d] Could not receive response from %s, error %s\n",
+				cl.name, rqproto.GetSequenceNumber(), rqproto.GetSrvc()+"."+rqproto.GetProcedure(), err.Error()))
+
 		if 11 == err.(zmq.Errno) { // We have no retries left.
 			// Reconnect if there is only one peer (otherwise send() times out b/c the peer connection
 			// is removed from the set in the REQ socket)
 			if len(cl.raddr) < 2 {
 				cl.createChannel()
 			}
-			if cl.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
-				cl.logger.Printf("[%s/%d] Receive timeout occurred, not trying again\n", cl.name, rqproto.GetSequenceNumber())
-			}
+
+			log.CRPC_log(log.LOGLEVEL_ERRORS,
+				fmt.Sprintf("[%s/%d] Receive timeout occurred, not trying again\n",
+					cl.name, rqproto.GetSequenceNumber()))
+
 			return nil, &RequestError{status: proto.RPCResponse_STATUS_TIMEOUT, err: err}
 		} else {
-			if cl.loglevel >= clusterrpc.LOGLEVEL_ERRORS {
-				cl.logger.Printf("[%s/%d] Network error: %s\n", cl.name, rqproto.GetSequenceNumber(), err.Error())
-			}
+
+			log.CRPC_log(log.LOGLEVEL_ERRORS,
+				fmt.Sprintf("[%s/%d] Network error: %s\n",
+					cl.name, rqproto.GetSequenceNumber(), err.Error()))
+
 			return nil, &RequestError{status: proto.RPCResponse_STATUS_CLIENT_NETWORK_ERROR, err: err}
 		}
 	}
-	if cl.loglevel >= clusterrpc.LOGLEVEL_DEBUG {
-		cl.logger.Printf("[%s/%d] Received response from %s\n", cl.name, rqproto.GetSequenceNumber(), rqproto.GetSrvc()+"."+rqproto.GetProcedure())
-	}
+	log.CRPC_log(log.LOGLEVEL_DEBUG,
+		fmt.Sprintf("[%s/%d] Received response from %s\n",
+			cl.name, rqproto.GetSequenceNumber(), rqproto.GetSrvc()+"."+rqproto.GetProcedure()))
 
 	return msg, nil
 }

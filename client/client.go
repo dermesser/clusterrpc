@@ -2,15 +2,12 @@ package client
 
 import (
 	"bytes"
-	"clusterrpc"
+	"clusterrpc/log"
 	"clusterrpc/proto"
 	smgr "clusterrpc/securitymanager"
 	"clusterrpc/server"
 	"errors"
 	"fmt"
-	"io"
-	"log"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -27,9 +24,6 @@ timeout is 10 seconds, which you might set to another value.
 type Client struct {
 	lock    sync.Mutex
 	channel *zmq.Socket
-
-	logger   *log.Logger
-	loglevel clusterrpc.LOGLEVEL_T
 
 	name string
 
@@ -63,9 +57,9 @@ being "STATUS_TIMEOUT" in case of a timeout (consolt Status()'s documentation fo
 of return codes)
 
 */
-func NewClient(client_name, raddr string, rport uint, loglevel clusterrpc.LOGLEVEL_T,
+func NewClient(client_name, raddr string, rport uint,
 	security_manager *smgr.ClientSecurityManager) (cl *Client, e error) {
-	return NewClientRR(client_name, []string{raddr}, []uint{rport}, loglevel, security_manager)
+	return NewClientRR(client_name, []string{raddr}, []uint{rport}, security_manager)
 }
 
 /*
@@ -80,16 +74,13 @@ use-case might be a lookup or cache server.
 use-case might be a lookup or cache server.
 
 */
-func NewClientRR(client_name string, raddrs []string, rports []uint, loglevel clusterrpc.LOGLEVEL_T,
-	security_manager *smgr.ClientSecurityManager) (*Client, error) {
+func NewClientRR(client_name string, raddrs []string, rports []uint, security_manager *smgr.ClientSecurityManager) (*Client, error) {
 	if len(raddrs) != len(rports) {
 		return nil, &RequestError{status: proto.RPCResponse_STATUS_CLIENT_CALLED_WRONG, err: errors.New("Mismatch between raddrs/rports lengths")}
 	}
 	cl := new(Client)
-	cl.logger = log.New(os.Stderr, "clusterrpc.Client: ", log.LstdFlags|log.Lmicroseconds)
 
 	cl.sequence_number = 0
-	cl.loglevel = loglevel
 	cl.name = client_name
 	cl.raddr = raddrs
 	cl.rport = rports
@@ -106,36 +97,6 @@ func NewClientRR(client_name string, raddrs []string, rports []uint, loglevel cl
 	}
 
 	return cl, err
-}
-
-/*
-Change the writer to which the client logs operations.
-*/
-func (cl *Client) SetLoggingOutput(w io.Writer) {
-	cl.lock.Lock()
-	defer cl.lock.Unlock()
-
-	cl.logger = log.New(w, cl.logger.Prefix(), cl.logger.Flags())
-}
-
-/*
-Set the logger of the client to a custom one.
-*/
-func (cl *Client) SetLogger(l *log.Logger) {
-	cl.lock.Lock()
-	defer cl.lock.Unlock()
-
-	cl.logger = l
-}
-
-/*
-Define which errors/situations to log
-*/
-func (cl *Client) SetLoglevel(ll clusterrpc.LOGLEVEL_T) {
-	cl.lock.Lock()
-	defer cl.lock.Unlock()
-
-	cl.loglevel = ll
 }
 
 /*
@@ -199,9 +160,8 @@ func (cl *Client) Close() {
 		return
 	}
 
-	if cl.loglevel >= clusterrpc.LOGLEVEL_INFO {
-		cl.logger.Println("Closing client channel", cl.name)
-	}
+	log.CRPC_log(log.LOGLEVEL_INFO, "Closing client channel", cl.name)
+
 	cl.channel.Close()
 	cl.channel = nil
 }
@@ -257,9 +217,8 @@ func (cl *Client) IsHealthy() bool {
 func (cl *Client) RunHeartbeat(ival time.Duration) {
 	if !cl.heartbeat_active {
 
-		if cl.loglevel >= clusterrpc.LOGLEVEL_INFO {
-			cl.logger.Println("Running ping sender for client", cl.name, cl.heartbeat_active)
-		}
+		log.CRPC_log(log.LOGLEVEL_INFO, "Running ping sender for client", cl.name, cl.heartbeat_active, "ival", ival)
+
 		cl.heartbeat_active = true
 
 		go func() {
