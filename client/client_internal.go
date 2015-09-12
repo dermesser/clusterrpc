@@ -148,7 +148,7 @@ func (cl *Client) doHeartBeat() bool {
 	if err == nil {
 		return true
 	} else {
-		log.CRPC_log(log.LOGLEVEL_WARNINGS, "RPC backend doesn't respond to ping: %s", err.(*RequestError).Status())
+		log.CRPC_log(log.LOGLEVEL_WARNINGS, "RPC backend doesn't respond to ping: ", err.(*RequestError).Status())
 		return false
 	}
 }
@@ -243,7 +243,7 @@ func (cl *Client) sendRequest(rqproto *proto.RPCRequest) ([]byte, error) {
 	rq_serialized, pberr := rqproto.Marshal()
 
 	if pberr != nil {
-		log.CRPC_log(log.LOGLEVEL_WARNINGS, "Error unserializing protobuf:", pberr.Error())
+		log.CRPC_log(log.LOGLEVEL_WARNINGS, "Error serializing protobuf:", pberr.Error())
 		return nil, &RequestError{status: proto.RPCResponse_STATUS_CLIENT_REQUEST_ERROR, err: pberr}
 	}
 

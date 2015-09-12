@@ -161,7 +161,7 @@ func (cl *Client) Close() {
 	}
 
 	log.CRPC_log(log.LOGLEVEL_INFO, "Closing client channel", cl.name)
-
+	cl.channel.SetLinger(0)
 	cl.channel.Close()
 	cl.channel = nil
 }
