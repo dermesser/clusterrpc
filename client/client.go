@@ -8,6 +8,7 @@ import (
 	"clusterrpc/server"
 	"errors"
 	"fmt"
+	golog "log"
 	"strings"
 	"sync"
 	"time"
@@ -45,6 +46,7 @@ type Client struct {
 	heartbeat_active bool
 
 	security_manager *smgr.ClientSecurityManager
+	rpclogger        *golog.Logger
 }
 
 /*
@@ -109,6 +111,13 @@ func (cl *Client) SetRetries(n uint) {
 	defer cl.lock.Unlock()
 
 	cl.eagain_retries = n
+}
+
+/*
+Log all RPCs made by this client to this logging device; either as hex/raw strings or protobuf strings.
+*/
+func (cl *Client) SetRPCLogger(l *golog.Logger) {
+	cl.rpclogger = l
 }
 
 /*
@@ -279,13 +288,24 @@ original call.
 */
 func (cl *Client) Request(data []byte, service, endpoint string, trace_dest *proto.TraceInfo) ([]byte, error) {
 
+	cl.rpclogRaw(service, endpoint, data, log_REQUEST)
+
 	if cl.do_healthcheck {
 		result := cl.doHealthCheck()
 		if !result {
 			return nil, &RequestError{status: proto.RPCResponse_STATUS_UNHEALTHY, err: errors.New("RPC backend unhealthy")}
 		}
 	}
-	return cl.request(nil, trace_dest, data, service, endpoint)
+
+	b, err := cl.request(nil, trace_dest, data, service, endpoint)
+
+	if err == nil {
+		cl.rpclogRaw(service, endpoint, b, log_RESPONSE)
+	} else {
+		cl.rpclogErr(service, endpoint, err)
+	}
+
+	return b, err
 }
 
 /*
@@ -297,6 +317,8 @@ call information and make traces and deadline propagation completely unavailable
 */
 func (cl *Client) RequestWithCtx(cx *server.Context, data []byte, service, endpoint string) ([]byte, error) {
 
+	cl.rpclogRaw(service, endpoint, data, log_REQUEST)
+
 	if cl.do_healthcheck {
 		result := cl.doHealthCheck()
 		if !result {
@@ -304,7 +326,15 @@ func (cl *Client) RequestWithCtx(cx *server.Context, data []byte, service, endpo
 		}
 	}
 
-	return cl.request(cx, nil, data, service, endpoint)
+	b, err := cl.request(cx, nil, data, service, endpoint)
+
+	if err == nil {
+		cl.rpclogRaw(service, endpoint, b, log_RESPONSE)
+	} else {
+		cl.rpclogErr(service, endpoint, err)
+	}
+
+	return b, err
 }
 
 /*
@@ -314,6 +344,8 @@ in case a service wants to receive traces of the calls it issues.
 func (cl *Client) RequestWithCtxAndTrace(cx *server.Context, trace_dest *proto.TraceInfo, data []byte,
 	service, endpoint string) ([]byte, error) {
 
+	cl.rpclogRaw(service, endpoint, data, log_REQUEST)
+
 	if cl.do_healthcheck {
 		result := cl.doHealthCheck()
 		if !result {
@@ -321,7 +353,15 @@ func (cl *Client) RequestWithCtxAndTrace(cx *server.Context, trace_dest *proto.T
 		}
 	}
 
-	return cl.request(cx, trace_dest, data, service, endpoint)
+	b, err := cl.request(cx, trace_dest, data, service, endpoint)
+
+	if err == nil {
+		cl.rpclogRaw(service, endpoint, b, log_RESPONSE)
+	} else {
+		cl.rpclogErr(service, endpoint, err)
+	}
+
+	return b, err
 }
 
 /*
@@ -337,6 +377,8 @@ For the other arguments, refer to the comments on plain Request()
 */
 func (cl *Client) RequestProtobuf(request, reply pb.Message, service, endpoint string, trace_dest *proto.TraceInfo) error {
 
+	cl.rpclogPB(service, endpoint, request, log_REQUEST)
+
 	if cl.do_healthcheck {
 		result := cl.doHealthCheck()
 		if !result {
@@ -347,26 +389,33 @@ func (cl *Client) RequestProtobuf(request, reply pb.Message, service, endpoint s
 	serialized_request, err := pb.Marshal(request)
 
 	if err != nil {
+		cl.rpclogErr(service, endpoint, err)
 		return err
 	}
 
 	response_bytes, err := cl.request(nil, trace_dest, serialized_request, service, endpoint)
 
 	if err != nil {
+		cl.rpclogErr(service, endpoint, err)
 		return err
 	}
 
 	err = pb.Unmarshal(response_bytes, reply)
 
 	if err != nil {
+		cl.rpclogErr(service, endpoint, err)
 		return err
 	}
+
+	cl.rpclogPB(service, endpoint, reply, log_RESPONSE)
 
 	return nil
 }
 
 func (cl *Client) RequestProtobufWithCtx(cx *server.Context, request, reply pb.Message, service, endpoint string) error {
 
+	cl.rpclogPB(service, endpoint, request, log_REQUEST)
+
 	if cl.do_healthcheck {
 		result := cl.doHealthCheck()
 		if !result {
@@ -377,25 +426,32 @@ func (cl *Client) RequestProtobufWithCtx(cx *server.Context, request, reply pb.M
 	serialized_request, err := pb.Marshal(request)
 
 	if err != nil {
+		cl.rpclogErr(service, endpoint, err)
 		return err
 	}
 
 	response_bytes, err := cl.request(cx, nil, serialized_request, service, endpoint)
 
 	if err != nil {
+		cl.rpclogErr(service, endpoint, err)
 		return err
 	}
 
 	err = pb.Unmarshal(response_bytes, reply)
 
 	if err != nil {
+		cl.rpclogErr(service, endpoint, err)
 		return err
 	}
+
+	cl.rpclogPB(service, endpoint, reply, log_RESPONSE)
 
 	return nil
 }
 
 func (cl *Client) RequestProtobufWithCtxAndTrace(cx *server.Context, trace_dest *proto.TraceInfo, request, reply pb.Message, service, endpoint string) error {
+
+	cl.rpclogPB(service, endpoint, request, log_REQUEST)
 
 	if cl.do_healthcheck {
 		result := cl.doHealthCheck()
@@ -407,20 +463,25 @@ func (cl *Client) RequestProtobufWithCtxAndTrace(cx *server.Context, trace_dest 
 	serialized_request, err := pb.Marshal(request)
 
 	if err != nil {
+		cl.rpclogErr(service, endpoint, err)
 		return err
 	}
 
 	response_bytes, err := cl.request(cx, trace_dest, serialized_request, service, endpoint)
 
 	if err != nil {
+		cl.rpclogErr(service, endpoint, err)
 		return err
 	}
 
 	err = pb.Unmarshal(response_bytes, reply)
 
 	if err != nil {
+		cl.rpclogErr(service, endpoint, err)
 		return err
 	}
+
+	cl.rpclogPB(service, endpoint, reply, log_RESPONSE)
 
 	return nil
 }

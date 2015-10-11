@@ -159,6 +159,10 @@ Prepare request and call Client.sendRequest() to send the request. Internally us
 func (cl *Client) request(cx *server.Context, trace_dest *proto.TraceInfo, data []byte,
 	service, endpoint string) ([]byte, error) {
 
+	if cl.channel == nil {
+		return nil, errors.New("Channel is closed")
+	}
+
 	cl.lock.Lock()
 	defer cl.lock.Unlock()
 
