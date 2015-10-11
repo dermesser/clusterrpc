@@ -49,16 +49,16 @@ func logProtobuf(p pb.Message) string {
 	return p.String()
 }
 
-func (ctx *Context) connIdString() string {
+func (ctx *Context) connIdString(size int) string {
 	dead_left := (ctx.orig_rq.GetDeadline() / 1000) - (time.Now().UnixNano() / 1000000)
 
 	if ctx.orig_rq.GetDeadline() == 0 {
 		dead_left = 0
 	}
 
-	return fmt.Sprintf("%s.%s %s/%d [%d ms left]", ctx.orig_rq.GetSrvc(), ctx.orig_rq.GetProcedure(),
+	return fmt.Sprintf("%s.%s %s/%d %d B [%d ms left]", ctx.orig_rq.GetSrvc(), ctx.orig_rq.GetProcedure(),
 		ctx.orig_rq.GetCallerId(), ctx.orig_rq.GetSequenceNumber(),
-		dead_left)
+		size, dead_left)
 }
 
 func (ctx *Context) rpclogErr(err error) {
@@ -74,7 +74,7 @@ func (ctx *Context) rpclogPB(p pb.Message, t rpclog_type) {
 
 			str := logProtobuf(p)
 
-			ctx.logger.Println(t.String(), ctx.connIdString(), str)
+			ctx.logger.Println(t.String(), ctx.connIdString(pb.Size(p)), str)
 			ctx.log_state++
 		}
 	}
@@ -85,7 +85,7 @@ func (ctx *Context) rpclogRaw(b []byte, t rpclog_type) {
 		if (ctx.log_state == 0 && t == log_REQUEST) ||
 			(ctx.log_state == 1 && t == log_RESPONSE) {
 
-			ctx.logger.Println(t.String(), ctx.connIdString(), logString(b))
+			ctx.logger.Println(t.String(), ctx.connIdString(len(b)), logString(b))
 			ctx.log_state++
 		}
 	}
@@ -96,7 +96,7 @@ func (ctx *Context) rpclogStr(s string, t rpclog_type) {
 		if (ctx.log_state == 0 && t == log_REQUEST) ||
 			(ctx.log_state == 1 && t == log_RESPONSE) {
 
-			ctx.logger.Println(t.String(), ctx.connIdString(), s)
+			ctx.logger.Println(t.String(), ctx.connIdString(len(s)), s)
 			ctx.log_state++
 		}
 	}

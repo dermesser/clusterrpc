@@ -48,11 +48,11 @@ func logProtobuf(p pb.Message) string {
 	return p.String()
 }
 
-func (cl *Client) connIdString() string {
+func (cl *Client) connIdString(size int) string {
 	if len(cl.raddr) < 2 && len(cl.raddr) > 0 {
-		return fmt.Sprintf("%s/%d->%s%d:", cl.name, cl.sequence_number, cl.raddr[0], cl.rport[0])
+		return fmt.Sprintf("%s/%d->%s%d %d B:", cl.name, cl.sequence_number, cl.raddr[0], cl.rport[0], size)
 	} else if len(cl.raddr) > 1 {
-		return fmt.Sprintf("%s/%d->%v/%v:", cl.name, cl.sequence_number, cl.raddr, cl.rport)
+		return fmt.Sprintf("%s/%d->%v/%v %d B:", cl.name, cl.sequence_number, cl.raddr, cl.rport, size)
 	} else {
 		return ""
 	}
@@ -68,18 +68,18 @@ func (cl *Client) rpclogPB(service, endpoint string, p pb.Message, t rpclog_type
 	if cl.rpclogger != nil {
 		str := logProtobuf(p)
 
-		cl.rpclogger.Println(t.String(), cl.connIdString(), str)
+		cl.rpclogger.Println(t.String(), cl.connIdString(pb.Size(p)), str)
 	}
 }
 
 func (cl *Client) rpclogRaw(service, endpoint string, b []byte, t rpclog_type) {
 	if cl.rpclogger != nil {
-		cl.rpclogger.Println(t.String(), cl.connIdString(), logString(b))
+		cl.rpclogger.Println(t.String(), cl.connIdString(len(b)), logString(b))
 	}
 }
 
 func (cl *Client) rpclogStr(service, endpoint string, s string, t rpclog_type) {
 	if cl.rpclogger != nil {
-		cl.rpclogger.Println(t.String(), cl.connIdString(), s)
+		cl.rpclogger.Println(t.String(), cl.connIdString(len(s)), s)
 	}
 }
