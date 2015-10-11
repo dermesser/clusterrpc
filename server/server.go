@@ -7,6 +7,7 @@ import (
 	smgr "clusterrpc/securitymanager"
 	"errors"
 	"fmt"
+	golog "log"
 	"time"
 
 	zmq "github.com/pebbe/zmq4"
@@ -28,7 +29,8 @@ type Server struct {
 	// Do not accept requests anymore
 	loadshed_state bool
 
-	lblock sync.Mutex
+	lblock    sync.Mutex
+	rpclogger *golog.Logger
 }
 
 /*
@@ -175,6 +177,13 @@ func (srv *Server) SetTimeout(d time.Duration) {
 // Set the machine name as shown in traces (os.Hostname() can be used to obtain the DNS name)
 func (srv *Server) SetMachineName(name string) {
 	srv.machine_name = name
+}
+
+/*
+Log all RPCs made by this client to this logging device; either as hex/raw strings or protobuf strings.
+*/
+func (cl *Server) SetRPCLogger(l *golog.Logger) {
+	cl.rpclogger = l
 }
 
 /*

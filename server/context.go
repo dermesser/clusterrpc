@@ -2,7 +2,9 @@ package server
 
 import (
 	"clusterrpc/proto"
+	"errors"
 	"fmt"
+	"log"
 	"time"
 
 	pb "github.com/gogo/protobuf/proto"
@@ -22,12 +24,19 @@ type Context struct {
 	deadline                      time.Time
 	// Tracing info
 	this_call *proto.TraceInfo
+
+	orig_rq *proto.RPCRequest
+	logger  *log.Logger
+	// 0 = None, 1 = logged request, 2 = logged response
+	log_state int
 }
 
-func (srv *Server) newContext(request *proto.RPCRequest) *Context {
+func (srv *Server) newContext(request *proto.RPCRequest, logger *log.Logger) *Context {
 	c := new(Context)
 	c.input = request.GetData()
 	c.failed = false
+	c.orig_rq = request
+	c.logger = logger
 
 	if request.GetDeadline() > 0 {
 		c.deadline = time.Unix(0, 1000*request.GetDeadline())
@@ -60,6 +69,7 @@ func (c *Context) AppendCallTrace(traceinfo *proto.TraceInfo) {
 Get the data that was sent by the client.
 */
 func (c *Context) GetInput() []byte {
+	c.rpclogRaw(c.input, log_REQUEST)
 	return c.input
 }
 
@@ -67,7 +77,15 @@ func (c *Context) GetInput() []byte {
 GetArgument serializes the input in a protocol buffer message.
 */
 func (c *Context) GetArgument(msg pb.Message) error {
-	return pb.Unmarshal(c.input, msg)
+	err := pb.Unmarshal(c.input, msg)
+
+	if err != nil {
+		c.rpclogErr(err)
+	} else {
+		c.rpclogPB(msg, log_REQUEST)
+	}
+
+	return err
 }
 
 /*
@@ -83,6 +101,7 @@ Fail with msg as error message (gets sent back to the client)
 func (c *Context) Fail(msg string) {
 	c.failed = true
 	c.error_message = msg
+	c.rpclogErr(errors.New(msg))
 }
 
 /*
@@ -112,6 +131,7 @@ Set Success flag and the data to return to the caller.
 */
 func (c *Context) Success(data []byte) {
 	c.result = data
+	c.rpclogRaw(data, log_RESPONSE)
 }
 
 /*
@@ -126,6 +146,8 @@ func (c *Context) Return(msg pb.Message) error {
 	}
 
 	c.result = result
+
+	c.rpclogPB(msg, log_RESPONSE)
 
 	return nil
 }

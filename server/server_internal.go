@@ -373,7 +373,7 @@ func (srv *Server) handleRequest(request *workerRequest, sock *zmq.Socket) {
 				fmt.Sprintf("[%x/%s/%d] Calling endpoint %s.%s...",
 					request.client_id, caller_id, rqproto.GetSequenceNumber(), rqproto.GetSrvc(), rqproto.GetProcedure()))
 
-			cx := srv.newContext(rqproto)
+			cx := srv.newContext(rqproto, srv.rpclogger)
 
 			// Actual invocation!!
 			handler(cx)
@@ -412,7 +412,7 @@ func (srv *Server) handleRequest(request *workerRequest, sock *zmq.Socket) {
 // "one-shot" -- doesn't catch Write() errors. But needs a lot of context
 func (srv *Server) sendError(sock *zmq.Socket, rq *proto.RPCRequest, s proto.RPCResponse_Status, request *workerRequest) {
 	// The context functions do most of the work for us.
-	tmp_ctx := srv.newContext(rq)
+	tmp_ctx := srv.newContext(rq, nil)
 	tmp_ctx.Fail(s.String())
 
 	response := tmp_ctx.toRPCResponse()

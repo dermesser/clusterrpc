@@ -74,7 +74,7 @@ func (cl *Client) rpclogPB(service, endpoint string, p pb.Message, t rpclog_type
 
 func (cl *Client) rpclogRaw(service, endpoint string, b []byte, t rpclog_type) {
 	if cl.rpclogger != nil {
-		cl.rpclogger.Println(t.String(), cl.connectToPeers(), logString(b))
+		cl.rpclogger.Println(t.String(), cl.connIdString(), logString(b))
 	}
 }
 
