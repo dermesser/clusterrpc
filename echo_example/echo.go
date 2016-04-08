@@ -14,7 +14,6 @@ to use an exact address, e.g. -host=192.168.1.23.
 package main
 
 import (
-	"clusterrpc"
 	"clusterrpc/client"
 	"clusterrpc/proto"
 	smgr "clusterrpc/securitymanager"
@@ -60,7 +59,7 @@ func errorReturningHandler(cx *server.Context) {
 
 // Calls another procedure on the same server (itself)
 func callingHandler(cx *server.Context) {
-	cl, err := client.NewClient("caller", host, port, clusterrpc.LOGLEVEL_WARNINGS, client_security_manager)
+	cl, err := client.NewClient("caller", host, port, client_security_manager)
 
 	if err != nil {
 		cx.Success([]byte("heyho :'("))
@@ -98,13 +97,11 @@ func Server() {
 		poolsize = 2
 	}
 
-	srv, err := server.NewServer(host, port, poolsize, clusterrpc.LOGLEVEL_DEBUG, server_security_manager) // don't set GOMAXPROCS if you want to test the loadbalancer (for correct queuing)
+	srv, err := server.NewServer(host, port, poolsize, server_security_manager) // don't set GOMAXPROCS if you want to test the loadbalancer (for correct queuing)
 
 	if err != nil {
 		return
 	}
-
-	srv.SetLoglevel(clusterrpc.LOGLEVEL_DEBUG)
 
 	hostname, err := os.Hostname()
 
@@ -124,7 +121,7 @@ func Server() {
 }
 
 func CachedClient() {
-	cc := client.NewConnCache("echo1_cc", clusterrpc.LOGLEVEL_DEBUG)
+	cc := client.NewConnCache("echo1_cc")
 
 	cl, err := cc.Connect(host, port, client_security_manager)
 
@@ -158,13 +155,12 @@ func CachedClient() {
 }
 
 func Client() {
-	cl, err := client.NewClient("echo1_cl", host, port, clusterrpc.LOGLEVEL_DEBUG, client_security_manager)
+	cl, err := client.NewClient("echo1_cl", host, port, client_security_manager)
 	if err != nil {
 		fmt.Println(err.Error())
 		return
 	}
 	defer cl.Close()
-	cl.SetLoglevel(clusterrpc.LOGLEVEL_DEBUG)
 	cl.SetTimeout(5 * time.Second)
 	cl.SetHealthcheck(false)
 	cl.SetRetries(2)
@@ -232,13 +228,12 @@ func Client() {
 }
 
 func Aclient() {
-	acl, err := client.NewAsyncClient("echo1_acl", host, port, 1, clusterrpc.LOGLEVEL_DEBUG, client_security_manager)
+	acl, err := client.NewAsyncClient("echo1_acl", host, port, 1, client_security_manager)
 	if err != nil {
 		fmt.Println(err.Error())
 		return
 	}
 	defer acl.Close()
-	acl.SetLoglevel(clusterrpc.LOGLEVEL_DEBUG)
 
 	callback := func(rp []byte, e error) {
 		if e == nil {
@@ -268,13 +263,12 @@ func benchServer() {
 		poolsize = 2
 	}
 
-	srv, err := server.NewServer(host, port, poolsize, clusterrpc.LOGLEVEL_WARNINGS, server_security_manager)
+	srv, err := server.NewServer(host, port, poolsize, server_security_manager)
 
 	if err != nil {
 		return
 	}
 
-	srv.SetLoglevel(clusterrpc.LOGLEVEL_ERRORS)
 	srv.RegisterHandler("EchoService", "Echo", silentEchoHandler)
 
 	e := srv.Start()
@@ -288,7 +282,7 @@ var requestcount uint32 = 0
 var waitgroup sync.WaitGroup
 
 func benchClient(n int) {
-	cl, err := client.NewClient("echo1_cl", host, port, clusterrpc.LOGLEVEL_WARNINGS, client_security_manager)
+	cl, err := client.NewClient("echo1_cl", host, port, client_security_manager)
 	if err != nil {
 		fmt.Println(err.Error())
 		return
