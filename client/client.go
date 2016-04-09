@@ -338,33 +338,6 @@ func (cl *Client) RequestWithCtx(cx *server.Context, data []byte, service, endpo
 }
 
 /*
-Does the same as RequestWithCtx, but also stores the trace in the specified destination. This is useful
-in case a service wants to receive traces of the calls it issues.
-*/
-func (cl *Client) RequestWithCtxAndTrace(cx *server.Context, trace_dest *proto.TraceInfo, data []byte,
-	service, endpoint string) ([]byte, error) {
-
-	cl.rpclogRaw(service, endpoint, data, log_REQUEST)
-
-	if cl.do_healthcheck {
-		result := cl.doHealthCheck()
-		if !result {
-			return nil, &RequestError{status: proto.RPCResponse_STATUS_UNHEALTHY, err: errors.New("RPC backend unhealthy")}
-		}
-	}
-
-	b, err := cl.request(cx, trace_dest, data, service, endpoint)
-
-	if err == nil {
-		cl.rpclogRaw(service, endpoint, b, log_RESPONSE)
-	} else {
-		cl.rpclogErr(service, endpoint, err)
-	}
-
-	return b, err
-}
-
-/*
 Use protobuf message objects instead of raw byte slices.
 
 request is the request protocol buffer which is to be sent, reply (an output argument) will contain the
@@ -431,43 +404,6 @@ func (cl *Client) RequestProtobufWithCtx(cx *server.Context, request, reply pb.M
 	}
 
 	response_bytes, err := cl.request(cx, nil, serialized_request, service, endpoint)
-
-	if err != nil {
-		cl.rpclogErr(service, endpoint, err)
-		return err
-	}
-
-	err = pb.Unmarshal(response_bytes, reply)
-
-	if err != nil {
-		cl.rpclogErr(service, endpoint, err)
-		return err
-	}
-
-	cl.rpclogPB(service, endpoint, reply, log_RESPONSE)
-
-	return nil
-}
-
-func (cl *Client) RequestProtobufWithCtxAndTrace(cx *server.Context, trace_dest *proto.TraceInfo, request, reply pb.Message, service, endpoint string) error {
-
-	cl.rpclogPB(service, endpoint, request, log_REQUEST)
-
-	if cl.do_healthcheck {
-		result := cl.doHealthCheck()
-		if !result {
-			return &RequestError{status: proto.RPCResponse_STATUS_UNHEALTHY, err: errors.New("RPC backend unhealthy")}
-		}
-	}
-
-	serialized_request, err := pb.Marshal(request)
-
-	if err != nil {
-		cl.rpclogErr(service, endpoint, err)
-		return err
-	}
-
-	response_bytes, err := cl.request(cx, trace_dest, serialized_request, service, endpoint)
 
 	if err != nil {
 		cl.rpclogErr(service, endpoint, err)
