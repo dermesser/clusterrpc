@@ -98,6 +98,12 @@ func NewClientRR(client_name string, raddrs []string, rports []uint, security_ma
 		return nil, err
 	}
 
+	err = cl.connectToPeers()
+
+	if err != nil {
+		return nil, err
+	}
+
 	return cl, err
 }
 
@@ -223,6 +229,9 @@ func (cl *Client) IsHealthy() bool {
 	return cl.doHealthCheck()
 }
 
+/*
+Send regular heartbeats, every `ival` (to keep the channel live and hot)
+*/
 func (cl *Client) RunHeartbeat(ival time.Duration) {
 	if !cl.heartbeat_active {
 
@@ -241,6 +250,9 @@ func (cl *Client) RunHeartbeat(ival time.Duration) {
 
 }
 
+/*
+Stop sending heartbeat requests.
+*/
 func (cl *Client) StopHeartbeat() {
 	cl.heartbeat_active = false
 }

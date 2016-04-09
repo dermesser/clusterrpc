@@ -39,12 +39,6 @@ func (cl *Client) createChannel() error {
 	cl.channel.SetIpv6(true)
 	cl.channel.SetReconnectIvl(100 * time.Millisecond)
 
-	err = cl.connectToPeers()
-
-	if err != nil {
-		return err
-	}
-
 	cl.channel.SetSndtimeo(cl.timeout)
 	cl.channel.SetRcvtimeo(cl.timeout)
 	cl.channel.SetReqRelaxed(1)
