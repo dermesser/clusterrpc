@@ -30,20 +30,19 @@ func (pa *PeerAddress) equals(pa2 PeerAddress) bool {
 	return pa.host == pa2.host && pa.port == pa2.port
 }
 
-// A channel to an RPC server.
+// A channel to an RPC server. It is threadsafe, but should not be shared among multiple clients.
+// TODO(lbo): Think about implementing a channel on top of DEALER, with a background goroutine delivering results to waiting requests.
 type RpcChannel struct {
 	sync.Mutex
 	channel *zmq.Socket
 
 	// Slices to allow multiple connections (round-robin)
 	peers []PeerAddress
-
-	security_manager *smgr.ClientSecurityManager
 }
 
 // Create a new RpcChannel.
 // security_manager may be nil.
-func NewChannel(security_manager *smgr.ClientSecurityManager) (*RpcChannel, error) {
+func NewRpcChannel(security_manager *smgr.ClientSecurityManager) (*RpcChannel, error) {
 	channel := RpcChannel{}
 
 	var err error
@@ -64,6 +63,7 @@ func NewChannel(security_manager *smgr.ClientSecurityManager) (*RpcChannel, erro
 	}
 
 	channel.channel.SetIpv6(true)
+	channel.channel.SetLinger(0)
 	channel.channel.SetReconnectIvl(100 * time.Millisecond)
 
 	channel.channel.SetSndtimeo(10 * time.Second)
@@ -93,6 +93,7 @@ func (c *RpcChannel) Connect(addr PeerAddress) error {
 	return nil
 }
 
+// Disconnect the given peer (i.e., take it out of the connection pool)
 func (c *RpcChannel) Disconnect(peer PeerAddress) {
 	c.Lock()
 	defer c.Unlock()
@@ -106,7 +107,7 @@ func (c *RpcChannel) Disconnect(peer PeerAddress) {
 	}
 }
 
-func (c *RpcChannel) SetDeadline(d time.Duration) {
+func (c *RpcChannel) SetTimeout(d time.Duration) {
 	c.Lock()
 	defer c.Unlock()
 
@@ -118,7 +119,6 @@ func (c *RpcChannel) destroy() {
 	c.Lock()
 	defer c.Unlock()
 
-	c.channel.SetLinger(0)
 	c.channel.Close()
 }
 
