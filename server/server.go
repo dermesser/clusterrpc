@@ -241,6 +241,19 @@ func (srv *Server) UnregisterHandler(svc, endpoint string) (err error) {
 	return
 }
 
+// Returns a handler, or nil if none was found.
+func (srv *Server) findHandler(service, endpoint string) Handler {
+	if service, ok := srv.services[service]; ok {
+		if handler, ok := service.endpoints[endpoint]; ok {
+			return handler
+		} else {
+			return nil
+		}
+	} else {
+		return nil
+	}
+}
+
 /*
 A server that is in lameduck mode will respond negatively to health checks
 but continue serving requests.

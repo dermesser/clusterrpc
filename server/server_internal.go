@@ -352,60 +352,51 @@ func (srv *Server) handleRequest(request *workerRequest, sock *zmq.Socket) {
 		return
 	}
 
-	// Find matching endpoint
-	srvc, srvc_found := srv.services[rqproto.GetSrvc()]
+	handler := srv.findHandler(rqproto.GetSrvc(), rqproto.GetProcedure())
 
-	if !srvc_found {
-		log.CRPC_log(log.LOGLEVEL_WARNINGS, fmt.Sprintf("[%x/%s/%d] NOT_FOUND response to request for service %s", request.client_id, caller_id, rqproto.GetSequenceNumber(), rqproto.GetSrvc()))
-
+	if handler == nil {
+		log.CRPC_log(log.LOGLEVEL_WARNINGS,
+			fmt.Sprintf("[%x/%s/%d] NOT_FOUND response to request for endpoint %s",
+				request.client_id, caller_id, rqproto.GetSequenceNumber(), rqproto.GetSrvc()+"."+rqproto.GetProcedure()))
 		srv.sendError(sock, rqproto, proto.RPCResponse_STATUS_NOT_FOUND, request)
 		return
+	}
+
+	log.CRPC_log(log.LOGLEVEL_DEBUG,
+		fmt.Sprintf("[%x/%s/%d] Calling endpoint %s.%s...",
+			request.client_id, caller_id, rqproto.GetSequenceNumber(), rqproto.GetSrvc(), rqproto.GetProcedure()))
+
+	cx := srv.newContext(rqproto, srv.rpclogger)
+
+	// Actual invocation!!
+	handler(cx)
+
+	rpproto := cx.toRPCResponse()
+	rpproto.SequenceNumber = pb.Uint64(rqproto.GetSequenceNumber())
+
+	response_serialized, pberr := rpproto.Marshal()
+
+	if pberr != nil {
+		srv.sendError(sock, rqproto, proto.RPCResponse_STATUS_SERVER_ERROR, request)
+
+		log.CRPC_log(log.LOGLEVEL_ERRORS,
+			fmt.Sprintf("[%x/%s/%d] Error when serializing RPCResponse: %s",
+				request.client_id, caller_id, rqproto.GetSequenceNumber(), pberr.Error()))
+
 	} else {
-		if handler, endpoint_found := srvc.endpoints[rqproto.GetProcedure()]; !endpoint_found {
+
+		_, err := sock.SendMessage(request.client_id, request.request_id, "", response_serialized)
+
+		if err != nil {
 			log.CRPC_log(log.LOGLEVEL_WARNINGS,
-				fmt.Sprintf("[%x/%s/%d] NOT_FOUND response to request for endpoint %s",
-					request.client_id, caller_id, rqproto.GetSequenceNumber(), rqproto.GetSrvc()+"."+rqproto.GetProcedure()))
+				fmt.Sprintf("[%x/%s/%d] Error when sending response; %s",
+					request.client_id, caller_id, rqproto.GetSequenceNumber(), err.Error()))
 
-			srv.sendError(sock, rqproto, proto.RPCResponse_STATUS_NOT_FOUND, request)
 			return
-		} else {
-			log.CRPC_log(log.LOGLEVEL_DEBUG,
-				fmt.Sprintf("[%x/%s/%d] Calling endpoint %s.%s...",
-					request.client_id, caller_id, rqproto.GetSequenceNumber(), rqproto.GetSrvc(), rqproto.GetProcedure()))
-
-			cx := srv.newContext(rqproto, srv.rpclogger)
-
-			// Actual invocation!!
-			handler(cx)
-
-			rpproto := cx.toRPCResponse()
-			rpproto.SequenceNumber = pb.Uint64(rqproto.GetSequenceNumber())
-
-			response_serialized, pberr := rpproto.Marshal()
-
-			if pberr != nil {
-				srv.sendError(sock, rqproto, proto.RPCResponse_STATUS_SERVER_ERROR, request)
-
-				log.CRPC_log(log.LOGLEVEL_ERRORS,
-					fmt.Sprintf("[%x/%s/%d] Error when serializing RPCResponse: %s",
-						request.client_id, caller_id, rqproto.GetSequenceNumber(), pberr.Error()))
-
-			} else {
-
-				_, err := sock.SendMessage(request.client_id, request.request_id, "", response_serialized)
-
-				if err != nil {
-					log.CRPC_log(log.LOGLEVEL_WARNINGS,
-						fmt.Sprintf("[%x/%s/%d] Error when sending response; %s",
-							request.client_id, caller_id, rqproto.GetSequenceNumber(), err.Error()))
-
-					return
-				}
-
-				log.CRPC_log(log.LOGLEVEL_DEBUG, fmt.Sprintf("[%x/%s/%d] Sent response.", request.client_id, caller_id, rqproto.GetSequenceNumber()))
-
-			}
 		}
+
+		log.CRPC_log(log.LOGLEVEL_DEBUG, fmt.Sprintf("[%x/%s/%d] Sent response.", request.client_id, caller_id, rqproto.GetSequenceNumber()))
+
 	}
 }
 
