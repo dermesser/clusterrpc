@@ -93,6 +93,127 @@ func (srv *Server) stop() error {
 	return nil
 }
 
+func (srv *Server) handleIncomingRpc(worker_queue *list.List, request_queue *list.List) {
+	// The message we're receiving here has this format: [client_identity, request_id, "", data].
+	msgs, err := srv.frontend_router.RecvMessageBytes(0)
+
+	if err != nil {
+		log.CRPC_log(log.LOGLEVEL_ERRORS, "Error when receiving from frontend:", err.Error())
+		return
+	}
+	if len(msgs) != 4 {
+		log.CRPC_log(log.LOGLEVEL_ERRORS, "Error: Skipping message with other than 4 frames from frontend router;", len(msgs), "frames received")
+		return
+	}
+
+	if srv.loadshed_state { // Refuse request.
+		request := &proto.RPCRequest{}
+		err = request.Unmarshal(msgs[3])
+
+		if err != nil {
+			log.CRPC_log(log.LOGLEVEL_WARNINGS, "Dropped message; could not decode protobuf:", err.Error())
+			return
+		}
+
+		srv.sendError(srv.frontend_router, request, proto.RPCResponse_STATUS_LOADSHED,
+			&workerRequest{client_id: msgs[0], request_id: msgs[1], data: msgs[3]})
+
+	} else if worker_id := worker_queue.Front(); worker_id != nil { // Find worker
+		_, err = srv.backend_router.SendMessage(worker_id.Value.([]byte), "", msgs) // [worker identity, "", client identity, "", RPCRequest]
+		worker_queue.Remove(worker_id)
+
+		if err != nil {
+			if err.(zmq.Errno) != zmq.EHOSTUNREACH {
+				log.CRPC_log(log.LOGLEVEL_ERRORS, "Error when sending to backend router:", err.Error())
+			} else {
+				log.CRPC_log(log.LOGLEVEL_ERRORS, "Could not route message, identity", fmt.Sprintf("%x", msgs[0]), ", to frontend")
+			}
+		}
+
+	} else if uint(request_queue.Len()) < srv.n_threads*OUTSTANDING_REQUESTS_PER_THREAD { // We're only allowing so many queued requests to prevent from complete overloading
+		request_queue.PushBack(msgs)
+
+		if request_queue.Len() > int(0.8*float64(srv.n_threads*OUTSTANDING_REQUESTS_PER_THREAD)) {
+			log.CRPC_log(log.LOGLEVEL_WARNINGS, "Queue is now at more than 80% fullness. Consider increasing # of workers: (qlen/cap)",
+				request_queue.Len(), srv.n_threads*OUTSTANDING_REQUESTS_PER_THREAD)
+
+		}
+	} else {
+		// Maybe just drop silently -- this costs CPU!
+		request := &proto.RPCRequest{}
+		err = request.Unmarshal(msgs[3])
+
+		if err != nil {
+			log.CRPC_log(log.LOGLEVEL_WARNINGS, "Dropped message; no available workers, queue full")
+			return
+		}
+
+		srv.sendError(srv.frontend_router, request, proto.RPCResponse_STATUS_OVERLOADED_RETRY,
+			&workerRequest{client_id: msgs[0], request_id: msgs[1], data: msgs[3]})
+	}
+
+}
+
+// Returns false if the server loop should be stopped
+func (srv *Server) handleWorkerResponse(worker_queue *list.List, request_queue *list.List) bool {
+	msgs, err := srv.backend_router.RecvMessageBytes(0) // [worker identity, "", client identity, request_id, "", RPCResponse]
+
+	if err != nil {
+		log.CRPC_log(log.LOGLEVEL_ERRORS, "Error when receiving from frontend:", err.Error())
+		return true
+	}
+	if len(msgs) != 6 {
+		log.CRPC_log(log.LOGLEVEL_ERRORS, "Error: Skipping message with other than 5 frames from backend;", len(msgs), "frames received")
+		return true
+	}
+
+	backend_identity := msgs[0]
+
+	// the data frame is MAGIC_READY_STRING when a worker joins, and MAGIC_STOP_STRING
+	// if the app asks to stop
+	if bytes.Equal(msgs[5], MAGIC_READY_STRING) {
+
+		worker_queue.PushBack(backend_identity)
+
+	} else if bytes.Equal(msgs[5], MAGIC_STOP_STRING) {
+
+		log.CRPC_log(log.LOGLEVEL_INFO, "Stopped balancer...")
+
+		// Send ack
+		_, err = srv.backend_router.SendMessage(backend_identity, "", "DONE")
+
+		if err != nil {
+			log.CRPC_log(log.LOGLEVEL_ERRORS, "Couldn't send response to STOP message:", err.Error())
+		}
+		return false
+
+	} else {
+		worker_queue.PushBack(backend_identity)
+		_, err := srv.frontend_router.SendMessage(msgs[2:]) // [client identity, request_id, "", RPCResponse]
+
+		if err != nil {
+			if err.(zmq.Errno) != zmq.EHOSTUNREACH {
+				log.CRPC_log(log.LOGLEVEL_WARNINGS, "Error when sending to backend router:", err.Error())
+			} else if err.(zmq.Errno) == zmq.EHOSTUNREACH {
+				// routing is mandatory.
+				// Fails when the client has already disconnected
+				log.CRPC_log(log.LOGLEVEL_WARNINGS, "Could not route message, worker identity", fmt.Sprintf("%x", msgs[0]), "to frontend")
+			}
+		}
+	}
+
+	// Now that we have a new free worker, let's see if there's work in the queue...
+	if request_queue.Len() > 0 && worker_queue.Len() > 0 {
+		request_message := request_queue.Remove(request_queue.Front()).([][]byte)
+		worker_id := worker_queue.Remove(worker_queue.Front()).([]byte)
+		_, err = srv.backend_router.SendMessage(worker_id, "", request_message) // [worker identity, "", client identity, request_id, "", RPCRequest]
+		if err != nil {
+			log.CRPC_log(log.LOGLEVEL_ERRORS, "Error when sending to backend router:", err.Error())
+		}
+	}
+	return true
+}
+
 /*
 Load balancer using the least used worker: We have a list (queue) of backend worker identities;
 a backend is queued when it sends a response, and dequeued when it is sent a client request.
@@ -108,11 +229,11 @@ func (srv *Server) loadbalance() {
 	// List of workers that are free -- list of []byte!
 	worker_queue := list.New()
 
-	// todo_queue is for incoming requests that find no available worker immediately.
+	// request_queue is for incoming requests that find no available worker immediately.
 	// We're allowing a backlog of 50 outstanding requests per task; over that, we're dropping
 	//
 	// List of [][]byte!
-	todo_queue := list.New()
+	request_queue := list.New()
 
 	poller := zmq.NewPoller()
 	poller.Add(srv.frontend_router, zmq.POLLIN)
@@ -128,119 +249,10 @@ func (srv *Server) loadbalance() {
 			for _, sock := range polled {
 				switch s := sock.Socket; s {
 				case srv.frontend_router:
-					// The message we're receiving here has this format: [client_identity, request_id, "", data].
-					msgs, err := srv.frontend_router.RecvMessageBytes(0)
-
-					if err != nil {
-						log.CRPC_log(log.LOGLEVEL_ERRORS, "Error when receiving from frontend:", err.Error())
-						continue
-					}
-					if len(msgs) != 4 {
-						log.CRPC_log(log.LOGLEVEL_ERRORS, "Error: Skipping message with other than 4 frames from frontend router;", len(msgs), "frames received")
-						continue
-					}
-
-					if srv.loadshed_state { // Refuse request.
-						request := &proto.RPCRequest{}
-						err = request.Unmarshal(msgs[3])
-
-						if err != nil {
-							log.CRPC_log(log.LOGLEVEL_WARNINGS, "Dropped message; could not decode protobuf:", err.Error())
-							continue
-						}
-
-						srv.sendError(srv.frontend_router, request, proto.RPCResponse_STATUS_LOADSHED,
-							&workerRequest{client_id: msgs[0], request_id: msgs[1], data: msgs[3]})
-
-					} else if worker_id := worker_queue.Front(); worker_id != nil { // Find worker
-						_, err = srv.backend_router.SendMessage(worker_id.Value.([]byte), "", msgs) // [worker identity, "", client identity, "", RPCRequest]
-						worker_queue.Remove(worker_id)
-
-						if err != nil {
-							if err.(zmq.Errno) != zmq.EHOSTUNREACH {
-								log.CRPC_log(log.LOGLEVEL_ERRORS, "Error when sending to backend router:", err.Error())
-							} else {
-								log.CRPC_log(log.LOGLEVEL_ERRORS, "Could not route message, identity", fmt.Sprintf("%x", msgs[0]), ", to frontend")
-							}
-						}
-
-					} else if uint(todo_queue.Len()) < srv.n_threads*OUTSTANDING_REQUESTS_PER_THREAD { // We're only allowing so many queued requests to prevent from complete overloading
-						todo_queue.PushBack(msgs)
-
-						if todo_queue.Len() > int(0.8*float64(srv.n_threads*OUTSTANDING_REQUESTS_PER_THREAD)) {
-							log.CRPC_log(log.LOGLEVEL_WARNINGS, "Queue is now at more than 80% fullness. Consider increasing # of workers: (qlen/cap)",
-								todo_queue.Len(), srv.n_threads*OUTSTANDING_REQUESTS_PER_THREAD)
-
-						}
-					} else {
-						// Maybe just drop silently -- this costs CPU!
-						request := &proto.RPCRequest{}
-						err = request.Unmarshal(msgs[3])
-
-						if err != nil {
-							log.CRPC_log(log.LOGLEVEL_WARNINGS, "Dropped message; no available workers, queue full")
-							continue
-						}
-
-						srv.sendError(srv.frontend_router, request, proto.RPCResponse_STATUS_OVERLOADED_RETRY,
-							&workerRequest{client_id: msgs[0], request_id: msgs[1], data: msgs[3]})
-					}
-
+					srv.handleIncomingRpc(worker_queue, request_queue)
 				case srv.backend_router:
-					msgs, err := srv.backend_router.RecvMessageBytes(0) // [worker identity, "", client identity, request_id, "", RPCResponse]
-
-					if err != nil {
-						log.CRPC_log(log.LOGLEVEL_ERRORS, "Error when receiving from frontend:", err.Error())
-						continue
-					}
-					if len(msgs) != 6 {
-						log.CRPC_log(log.LOGLEVEL_ERRORS, "Error: Skipping message with other than 5 frames from backend;", len(msgs), "frames received")
-						continue
-					}
-
-					backend_identity := msgs[0]
-
-					// the data frame is MAGIC_READY_STRING when a worker joins, and MAGIC_STOP_STRING
-					// if the app asks to stop
-					if bytes.Equal(msgs[5], MAGIC_READY_STRING) {
-
-						worker_queue.PushBack(backend_identity)
-
-					} else if bytes.Equal(msgs[5], MAGIC_STOP_STRING) {
-
-						log.CRPC_log(log.LOGLEVEL_INFO, "Stopped balancer...")
-
-						// Send ack
-						_, err = srv.backend_router.SendMessage(backend_identity, "", "DONE")
-
-						if err != nil {
-							log.CRPC_log(log.LOGLEVEL_ERRORS, "Couldn't send response to STOP message:", err.Error())
-						}
+					if !srv.handleWorkerResponse(worker_queue, request_queue) {
 						return
-
-					} else {
-						worker_queue.PushBack(backend_identity)
-						_, err := srv.frontend_router.SendMessage(msgs[2:]) // [client identity, request_id, "", RPCResponse]
-
-						if err != nil {
-							if err.(zmq.Errno) != zmq.EHOSTUNREACH {
-								log.CRPC_log(log.LOGLEVEL_WARNINGS, "Error when sending to backend router:", err.Error())
-							} else if err.(zmq.Errno) == zmq.EHOSTUNREACH {
-								// routing is mandatory.
-								// Fails when the client has already disconnected
-								log.CRPC_log(log.LOGLEVEL_WARNINGS, "Could not route message, worker identity", fmt.Sprintf("%x", msgs[0]), "to frontend")
-							}
-						}
-					}
-
-					// Now that we have a new free worker, let's see if there's work in the queue...
-					if todo_queue.Len() > 0 && worker_queue.Len() > 0 {
-						request_message := todo_queue.Remove(todo_queue.Front()).([][]byte)
-						worker_id := worker_queue.Remove(worker_queue.Front()).([]byte)
-						_, err = srv.backend_router.SendMessage(worker_id, "", request_message) // [worker identity, "", client identity, request_id, "", RPCRequest]
-						if err != nil {
-							log.CRPC_log(log.LOGLEVEL_ERRORS, "Error when sending to backend router:", err.Error())
-						}
 					}
 				}
 			}
