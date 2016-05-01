@@ -30,6 +30,10 @@ func (pa *PeerAddress) toDebugStr() string {
 	return fmt.Sprintf("%s:%d", pa.host, pa.port)
 }
 
+func (pa *PeerAddress) String() string {
+	return pa.toDebugStr()
+}
+
 func (pa *PeerAddress) equals(pa2 PeerAddress) bool {
 	return pa.host == pa2.host && pa.port == pa2.port
 }

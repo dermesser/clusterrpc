@@ -20,7 +20,7 @@ type AsyncClient struct {
 	request_queue chan *asyncRequest
 	qlength       uint
 
-	client *Client
+	client Client
 }
 
 /*
@@ -33,14 +33,28 @@ higher parallelism can simply be achieved by using multiple AsyncClients.
 client_name is an arbitrary name that can be used to identify this client at the server (e.g.
 in logs)
 */
-func NewAsyncClient(client_name, raddr string, rport, queue_length uint,
+func NewAsyncClient(client_name string, addr PeerAddress, queue_length uint,
 	security_manager *smgr.ClientSecurityManager) (*AsyncClient, error) {
 
 	cl := new(AsyncClient)
 	cl.qlength = queue_length
 
 	var err error
-	cl.client, err = NewClient(client_name, raddr, rport, security_manager)
+	ch, err := NewRpcChannel(security_manager)
+
+	if err != nil {
+		log.CRPC_log(log.LOGLEVEL_ERRORS, "Couldn't create channel:", err)
+		return nil, err
+	}
+
+	err = ch.Connect(addr)
+
+	if err != nil {
+		log.CRPC_log(log.LOGLEVEL_ERRORS, "Couldn't connect to peer:", err)
+		return nil, err
+	}
+
+	cl.client = NewClient(client_name, ch)
 
 	if err != nil {
 		log.CRPC_log(log.LOGLEVEL_ERRORS, "Synchronous client constructor returned error:", err.Error())
@@ -57,7 +71,7 @@ func NewAsyncClient(client_name, raddr string, rport, queue_length uint,
 Set timeout for writes.
 */
 func (cl *AsyncClient) SetTimeout(d time.Duration) {
-	cl.client.SetTimeout(d)
+	cl.client.SetTimeout(d, true /* propagate */)
 }
 
 func (cl *AsyncClient) Close() {
@@ -67,7 +81,7 @@ func (cl *AsyncClient) Close() {
 func (cl *AsyncClient) startThread() {
 	for rq := range cl.request_queue {
 		if rq.terminate {
-			cl.client.Close()
+			cl.client.Destroy()
 			close(cl.request_queue)
 			return
 		}

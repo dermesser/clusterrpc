@@ -1,10 +1,12 @@
 package client
 
 import (
+	"bytes"
 	"clusterrpc/proto"
 	"clusterrpc/server"
 	"fmt"
 	golog "log"
+	"strings"
 	"time"
 
 	pb "github.com/gogo/protobuf/proto"
@@ -79,7 +81,7 @@ func (rp *Response) Error() string {
 
 // An RPC request that can be modified before it is sent.
 type Request struct {
-	client            *_Client
+	client            *Client
 	service, endpoint string
 	sequence_number   uint64
 
@@ -143,7 +145,7 @@ func (r *Request) Go(payload []byte) Response {
 }
 
 // A ClientFilter is a function that is called with a request and fulfills a certain task.
-// Filters are stacked in _Client.filters; filters[0] is called first, and calls in turn filters[1]
+// Filters are stacked in Client.filters; filters[0] is called first, and calls in turn filters[1]
 // until the last filter sends the message off to the network.
 type ClientFilter (func(rq *Request, next_filter int) Response)
 
@@ -241,7 +243,7 @@ func SendFilter(rq *Request, next int) Response {
 }
 
 // A (new) client object. It contains a channel
-type _Client struct {
+type Client struct {
 	channel RpcChannel
 	name    string
 
@@ -260,12 +262,12 @@ type _Client struct {
 
 // Creates a new client from the channel.
 // Don't share a channel among two concurrently active clients.
-func New_Client(name string, channel *RpcChannel) _Client {
-	return _Client{name: name, channel: *channel, active: true, filters: default_filters}
+func NewClient(name string, channel *RpcChannel) Client {
+	return Client{name: name, channel: *channel, active: true, filters: default_filters}
 }
 
 // Set socket timeout (default 10s) and whether to propagate this timeout through the call tree.
-func (client *_Client) SetTimeout(d time.Duration, propagate bool) {
+func (client *Client) SetTimeout(d time.Duration, propagate bool) {
 	if !client.active {
 		return
 	}
@@ -276,7 +278,7 @@ func (client *_Client) SetTimeout(d time.Duration, propagate bool) {
 }
 
 // Disconnects the channel and disables the client
-func (client *_Client) Destroy() {
+func (client *Client) Destroy() {
 	client.channel.destroy()
 	client.channel = RpcChannel{}
 	client.active = false
@@ -284,10 +286,80 @@ func (client *_Client) Destroy() {
 
 // Create a Request to be sent by this client.
 // If a previous request has not been finished, this method returns nil.
-func (client *_Client) NewRequest(service, endpoint string) *Request {
+func (client *Client) NewRequest(service, endpoint string) *Request {
 	if client.request_active {
 		return nil
 	}
 	client.request_active = true
 	return &Request{client: client, params: client.default_params, service: service, endpoint: endpoint}
+}
+
+// Sends a request to the server, asking whether it accepts requests
+func (client *Client) IsHealthy() bool {
+	rp := client.NewRequest("__CLUSTERRPC", "Health").SetParameters(NewParams().Timeout(1 * time.Second)).Go([]byte{})
+	return rp.Ok()
+}
+
+// Legacy API -- deprecated!
+
+func (cl *Client) Request(data []byte, service, endpoint string, trace_dest *proto.TraceInfo) ([]byte, error) {
+	rp := cl.NewRequest(service, endpoint).SetTrace(trace_dest).Go(data)
+
+	if !rp.Ok() {
+		return nil, &rp
+	}
+	return rp.Payload(), nil
+}
+
+func (cl *Client) RequestProtobuf(request, reply pb.Message, service, endpoint string, trace_dest *proto.TraceInfo) error {
+	rp := cl.NewRequest(service, endpoint).SetTrace(trace_dest).GoProto(request)
+
+	if !rp.Ok() {
+		return &rp
+	}
+	rp.GetResponseMessage(&reply)
+	return nil
+}
+
+// Utility functions
+
+const TRACE_INFO_TIME_FORMAT = "Mon Jan _2 15:04:05.999 2006"
+
+/*
+Formats the TraceInfo data structure.
+*/
+func FormatTraceInfo(ti *proto.TraceInfo, indent int) string {
+	if ti == nil {
+		return ""
+	}
+	indent_string := strings.Repeat(" ", indent)
+	buf := bytes.NewBuffer(nil)
+
+	fmt.Fprintf(buf, "%sReceived: %s\n", indent_string,
+		time.Unix(0, int64(1000*ti.GetReceivedTime())).UTC().Format(TRACE_INFO_TIME_FORMAT))
+
+	fmt.Fprintf(buf, "%sReplied: %s\n", indent_string,
+		time.Unix(0, int64(1000*ti.GetRepliedTime())).UTC().Format(TRACE_INFO_TIME_FORMAT))
+
+	if ti.GetMachineName() != "" {
+		fmt.Fprintf(buf, "%sMachine: %s\n", indent_string, ti.GetMachineName())
+	}
+	if ti.GetEndpointName() != "" {
+		fmt.Fprintf(buf, "%sEndpoint: %s\n", indent_string, ti.GetEndpointName())
+	}
+	if ti.GetErrorMessage() != "" {
+		fmt.Fprintf(buf, "%sError: %s\n", indent_string, ti.GetErrorMessage())
+	}
+	if ti.GetRedirect() != "" {
+		fmt.Fprintf(buf, "%sRedirect: %s\n", indent_string, ti.GetRedirect())
+	}
+
+	if len(ti.GetChildCalls()) > 0 {
+		for _, call_traceinfo := range ti.GetChildCalls() {
+			fmt.Fprintf(buf, FormatTraceInfo(call_traceinfo, indent+2))
+			fmt.Fprintf(buf, "\n")
+		}
+	}
+
+	return buf.String()
 }

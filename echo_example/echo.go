@@ -94,8 +94,8 @@ func Server() {
 	poolsize := uint(runtime.GOMAXPROCS(0))
 
 	// minimum poolsize for some functions of this demo to work
-	if poolsize < 2 {
-		poolsize = 2
+	if poolsize < 4 {
+		poolsize = 4
 	}
 
 	srv, err := server.NewServer(host, port, poolsize, server_security_manager) // don't set GOMAXPROCS if you want to test the loadbalancer (for correct queuing)
@@ -167,6 +167,10 @@ func NewClient() {
 	cl := client.New_Client("echo1_ncl", ch)
 	cl.SetTimeout(4*time.Second, false)
 
+	if !cl.IsHealthy() {
+		panic("not healthy!")
+	}
+
 	trace := new(proto.TraceInfo)
 	rp := cl.NewRequest("EchoService", "Echo").SetTrace(trace).Go([]byte("helloworld_fromnew"))
 
@@ -174,7 +178,7 @@ func NewClient() {
 		panic(rp.Error())
 	}
 	fmt.Println("Received response (new):", string(rp.Payload()))
-	fmt.Println(client.FormatTraceInfo(trace, 0))
+
 	// Times out on first try...
 	rp = cl.NewRequest("EchoService", "Error").SetParameters(client.NewParams().Timeout(2 * time.Second).Retries(2)).Go([]byte("helloworld_fromnew_to"))
 
@@ -182,79 +186,24 @@ func NewClient() {
 		fmt.Println("Error:", rp.Error())
 	}
 	fmt.Println("Received response (new):", string(rp.Payload()))
-}
 
-func Client() {
-	cl, err := client.NewClient("echo1_cl", host, port, client_security_manager)
-	if err != nil {
-		fmt.Println(err.Error())
-		return
+	// Non-existing endpoint
+	rp = cl.NewRequest("EchoService", "DoesNotExist").Go([]byte("helloworld_fromnew"))
+
+	if !rp.Ok() {
+		fmt.Println("Error:", rp.Error())
 	}
-	defer cl.Close()
-	cl.SetTimeout(5 * time.Second)
-	cl.SetHealthcheck(false)
-	cl.SetRetries(2)
+	fmt.Println("Received response (new):", string(rp.Payload()))
 
-	trace_info := new(proto.TraceInfo)
+	// Cascading RPC
+	trace = new(proto.TraceInfo)
+	rp = cl.NewRequest("EchoService", "CallOther").SetTrace(trace).Go([]byte("helloworld_fromnew"))
 
-	/// Plain echo
-	status := cl.IsHealthy()
-
-	if !status {
-		fmt.Println("Backend not healthy")
-		return
+	if !rp.Ok() {
+		fmt.Println("Error:", rp.Error())
 	}
-
-	resp, err := cl.Request([]byte("helloworld"), "EchoService", "Echo", trace_info)
-	fmt.Println(client.FormatTraceInfo(trace_info, 0))
-
-	if err != nil {
-		fmt.Println(err.Error())
-	} else {
-		fmt.Println("Received response:", string(resp), len(resp))
-	}
-	/// Times out on first try, returns an app error after
-	resp, err = cl.Request([]byte("helloworld"), "EchoService", "Error", trace_info)
-	fmt.Println(client.FormatTraceInfo(trace_info, 0))
-
-	if err != nil {
-		fmt.Println(err.Error())
-	} else {
-		fmt.Println("Received response:", string(resp), len(resp))
-	}
-
-	/// Redirect us to somewhere else
-
-	resp, err = cl.Request([]byte("helloworld"), "EchoService", "Redirect", trace_info)
-	fmt.Println(client.FormatTraceInfo(trace_info, 0))
-
-	if err != nil {
-		fmt.Println(err.Error())
-	} else {
-		fmt.Println("Received response:", string(resp), len(resp))
-	}
-
-	// NOT_FOUND
-
-	resp, err = cl.Request([]byte("helloworld"), "EchoService", "DoesNotExist", trace_info)
-	fmt.Println(client.FormatTraceInfo(trace_info, 0))
-
-	if err != nil {
-		fmt.Println(err.Error())
-	} else {
-		fmt.Println("Received response:", string(resp), len(resp))
-	}
-
-	// Cascading function (calls other RPC)
-	resp, err = cl.Request([]byte("helloworld"), "EchoService", "CallOther", trace_info)
-	fmt.Println(client.FormatTraceInfo(trace_info, 0))
-
-	if err != nil {
-		fmt.Println(err.Error())
-	} else {
-		fmt.Println("Received response:", string(resp), len(resp))
-	}
-
+	fmt.Println("Received response (new):", string(rp.Payload()))
+	fmt.Println(client.FormatTraceInfo(trace, 0))
 }
 
 func Aclient() {
