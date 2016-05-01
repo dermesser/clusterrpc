@@ -14,11 +14,11 @@ import (
 // A TCP/IP address
 type PeerAddress struct {
 	host string
-	port uint32
+	port uint
 }
 
 // Construct a new peer address.
-func Peer(host string, port uint32) PeerAddress {
+func Peer(host string, port uint) PeerAddress {
 	return PeerAddress{host: host, port: port}
 }
 
@@ -107,6 +107,14 @@ func (c *RpcChannel) Disconnect(peer PeerAddress) {
 	}
 }
 
+// First disconnect, then reconnect to all peers.
+func (c *RpcChannel) Reconnect() {
+	for _, p := range c.peers {
+		c.Disconnect(p)
+		c.Connect(p)
+	}
+}
+
 func (c *RpcChannel) SetTimeout(d time.Duration) {
 	c.Lock()
 	defer c.Unlock()
@@ -128,12 +136,20 @@ func (c *RpcChannel) sendMessage(request []byte) error {
 
 	_, err := c.channel.SendBytes(request, 0)
 
+	if err != nil {
+		log.CRPC_log(log.LOGLEVEL_ERRORS, fmt.Sprintf("Could not send message to %s. Error: %s", c.peers[0].host, err.Error()))
+	}
+
 	return err
 }
 
 func (c *RpcChannel) receiveMessage() ([]byte, error) {
 
 	msg, err := c.channel.RecvBytes(0)
+
+	if err != nil {
+		log.CRPC_log(log.LOGLEVEL_ERRORS, fmt.Sprintf("Could not receive message from %s. Error: %s", c.peers[0].host, err.Error()))
+	}
 
 	return msg, err
 }
