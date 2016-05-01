@@ -177,6 +177,15 @@ func TimeoutFilter(rq *Request, next int) Response {
 	return rq.callNextFilter(next)
 }
 
+// Implements redirects: A server can tell us to follow a redirect. This is
+// expensive in general because it involves setting up and tearing down a
+// completely new client. It also doesn't work well with security-enabled
+// RPCs.
+func RedirectFilter(rq *Request, next int) Response {
+	// NOTE: This filter is unimplemented, because it is being phased out. Redirections are an unnecessary feature.
+	return rq.callNextFilter(next)
+}
+
 // A filter that retries a request according to the request's parameters.
 func RetryFilter(rq *Request, next int) Response {
 	attempts := int(rq.params.retries + 1)

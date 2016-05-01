@@ -15,6 +15,7 @@ package main
 
 import (
 	"clusterrpc/client"
+	rpclog "clusterrpc/log"
 	"clusterrpc/proto"
 	smgr "clusterrpc/securitymanager"
 	"clusterrpc/server"
@@ -152,6 +153,35 @@ func CachedClient() {
 
 		cc.Return(&cl)
 	}
+}
+
+func NewClient() {
+	ch, err := client.NewRpcChannel(client_security_manager)
+
+	if err != nil {
+		panic(err.Error())
+	}
+
+	ch.Connect(client.Peer(host, port))
+
+	cl := client.New_Client("echo1_ncl", ch)
+	cl.SetTimeout(4*time.Second, false)
+
+	trace := new(proto.TraceInfo)
+	rp := cl.NewRequest("EchoService", "Echo").SetTrace(trace).Go([]byte("helloworld_fromnew"))
+
+	if !rp.Ok() {
+		panic(rp.Error())
+	}
+	fmt.Println("Received response (new):", string(rp.Payload()))
+	fmt.Println(client.FormatTraceInfo(trace, 0))
+	// Times out on first try...
+	rp = cl.NewRequest("EchoService", "Error").SetParameters(client.NewParams().Timeout(2 * time.Second).Retries(2)).Go([]byte("helloworld_fromnew_to"))
+
+	if !rp.Ok() {
+		fmt.Println("Error:", rp.Error())
+	}
+	fmt.Println("Received response (new):", string(rp.Payload()))
 }
 
 func Client() {
@@ -333,6 +363,8 @@ func main() {
 
 	flag.Parse()
 
+	rpclog.SetLoglevel(rpclog.LOGLEVEL_DEBUG)
+
 	if secure {
 		initializeSecurity(srv || srvbench)
 	}
@@ -362,8 +394,9 @@ func main() {
 	if srv {
 		Server()
 	} else if cl {
-		CachedClient()
-		Client()
+		//CachedClient()
+		//Client()
+		NewClient()
 	} else if acl {
 		Aclient()
 	} else if clbench > 0 {
