@@ -3,7 +3,6 @@ package client
 import (
 	smgr "clusterrpc/securitymanager"
 	"container/list"
-	"fmt"
 	"sync"
 	"time"
 )
@@ -30,13 +29,13 @@ func NewConnCache(client_name string) *ConnectionCache {
 Get a connection, either from the pool or a new one, depending on if there are connections
 available.
 */
-func (cc *ConnectionCache) Connect(host string, port uint,
+func (cc *ConnectionCache) Connect(peer PeerAddress,
 	security_manager *smgr.ClientSecurityManager) (*Client, error) {
 
 	cc.mx.Lock()
 	defer cc.mx.Unlock()
 
-	cls, ok := cc.cache[host+fmt.Sprint(port)]
+	cls, ok := cc.cache[peer.String()]
 
 	if ok {
 		if cls.Len() > 0 {
@@ -45,16 +44,28 @@ func (cc *ConnectionCache) Connect(host string, port uint,
 			return cl, nil
 		}
 	} else {
-		cc.cache[host+fmt.Sprint(port)] = list.New()
+		cc.cache[peer.String()] = list.New()
 	}
 
-	new_cl, err := NewClient(cc.client_name, host, port, security_manager)
+	ch, err := NewRpcChannel(security_manager)
 
 	if err != nil {
 		return nil, err
 	}
 
-	return new_cl, nil
+	err = ch.Connect(peer)
+
+	if err != nil {
+		return nil, err
+	}
+
+	new_cl := NewClient(cc.client_name, ch)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &new_cl, nil
 }
 
 /*
@@ -68,11 +79,11 @@ func (cc *ConnectionCache) Return(clp **Client) {
 	cl := *clp
 
 	// We only have one peer, so we can always use the first element.
-	cls, ok := cc.cache[cl.raddr[0]+fmt.Sprint(cl.rport[0])]
+	cls, ok := cc.cache[(*clp).channel.peers[0].String()]
 
 	if !ok {
 		// Happens when there was a garbage collection (CleanOld()) in between
-		cc.cache[cl.raddr[0]+fmt.Sprint(cl.rport[0])] = list.New()
+		cc.cache[(*clp).channel.peers[0].String()] = list.New()
 	}
 
 	cls.PushBack(cl)
@@ -93,8 +104,8 @@ func (cc *ConnectionCache) CleanOld(older_than time.Duration) {
 		}
 
 		for cl := cls.Front(); cl != nil; cl = cl.Next() {
-			if time.Now().Sub(cl.Value.(*Client).last_used) > older_than {
-				cl.Value.(*Client).Close()
+			if time.Now().Sub(cl.Value.(*Client).last_sent) > older_than {
+				cl.Value.(*Client).Destroy()
 				cls.Remove(cl)
 			}
 		}

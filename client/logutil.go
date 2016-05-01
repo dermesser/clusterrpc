@@ -49,10 +49,10 @@ func logProtobuf(p pb.Message) string {
 }
 
 func (cl *Client) connIdString(size int) string {
-	if len(cl.raddr) < 2 && len(cl.raddr) > 0 {
-		return fmt.Sprintf("%s/%d->%s%d %d B:", cl.name, cl.sequence_number, cl.raddr[0], cl.rport[0], size)
-	} else if len(cl.raddr) > 1 {
-		return fmt.Sprintf("%s/%d->%v/%v %d B:", cl.name, cl.sequence_number, cl.raddr, cl.rport, size)
+	if len(cl.channel.peers) < 2 && len(cl.channel.peers) > 0 {
+		return fmt.Sprintf("%s/%d->%s %d B:", cl.name, cl.sequence_number, cl.channel.peers[0].toDebugStr(), size)
+	} else if len(cl.channel.peers) > 1 {
+		return fmt.Sprintf("%s/%d->%v %d B:", cl.name, cl.sequence_number, cl.channel.peers, size)
 	} else {
 		return ""
 	}

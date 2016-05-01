@@ -15,6 +15,7 @@ package main
 
 import (
 	"clusterrpc/client"
+	rpclog "clusterrpc/log"
 	"clusterrpc/proto"
 	smgr "clusterrpc/securitymanager"
 	"clusterrpc/server"
@@ -59,28 +60,43 @@ func errorReturningHandler(cx *server.Context) {
 
 // Calls another procedure on the same server (itself)
 func callingHandler(cx *server.Context) {
-	cl, err := client.NewClient("caller", host, port, client_security_manager)
+	ch, err := client.NewRpcChannel(client_security_manager)
 
 	if err != nil {
-		cx.Success([]byte("heyho :'("))
+		cx.Success([]byte("heyho 1 :'("))
 		return
 	}
 
-	b, err := cl.RequestWithCtx(cx, []byte("xyz"), "EchoService", "Echo")
+	err = ch.Connect(client.Peer(host, port))
 
 	if err != nil {
-		cx.Success([]byte("heyho :''("))
+		cx.Success([]byte("heyho 2 :'("))
 		return
 	}
 
-	b, err = cl.RequestWithCtx(cx, []byte("xyz"), "EchoService", "Error")
+	cl := client.NewClient("caller", ch)
 
 	if err != nil {
-		cx.Success([]byte("heyho :''("))
+		cx.Success([]byte("heyho 3 :'("))
 		return
 	}
 
-	cx.Success(b)
+	rp := cl.NewRequest("EchoService", "Echo").SetContext(cx).Go([]byte("xyz"))
+
+	if !rp.Ok() {
+		cx.Success([]byte("heyho 4 :''("))
+		fmt.Println(rp.Error())
+		return
+	}
+
+	rp = cl.NewRequest("EchoService", "Error").SetContext(cx).Go([]byte("xyz"))
+
+	if !rp.Ok() {
+		cx.Success([]byte("heyho 5 :''("))
+		return
+	}
+
+	cx.Success(rp.Payload())
 }
 
 var i int32 = 0
@@ -93,8 +109,8 @@ func Server() {
 	poolsize := uint(runtime.GOMAXPROCS(0))
 
 	// minimum poolsize for some functions of this demo to work
-	if poolsize < 2 {
-		poolsize = 2
+	if poolsize < 4 {
+		poolsize = 4
 	}
 
 	srv, err := server.NewServer(host, port, poolsize, server_security_manager) // don't set GOMAXPROCS if you want to test the loadbalancer (for correct queuing)
@@ -123,19 +139,18 @@ func Server() {
 func CachedClient() {
 	cc := client.NewConnCache("echo1_cc")
 
-	cl, err := cc.Connect(host, port, client_security_manager)
+	cl, err := cc.Connect(client.Peer(host, port), client_security_manager)
 
 	if err != nil {
 		fmt.Println(err.Error())
 		return
 	}
-	cl.SetTimeout(5 * time.Second)
-	cl.SetHealthcheck(true)
+	cl.SetTimeout(5*time.Second, true)
 
 	cc.Return(&cl)
 
 	for i := 0; i < 5; i++ {
-		cl, err = cc.Connect(host, port, client_security_manager)
+		cl, err = cc.Connect(client.Peer(host, port), client_security_manager)
 
 		if err != nil {
 			fmt.Println(err.Error())
@@ -155,80 +170,58 @@ func CachedClient() {
 }
 
 func Client() {
-	cl, err := client.NewClient("echo1_cl", host, port, client_security_manager)
-	if err != nil {
-		fmt.Println(err.Error())
-		return
-	}
-	defer cl.Close()
-	cl.SetTimeout(5 * time.Second)
-	cl.SetHealthcheck(false)
-	cl.SetRetries(2)
-
-	trace_info := new(proto.TraceInfo)
-
-	/// Plain echo
-	status := cl.IsHealthy()
-
-	if !status {
-		fmt.Println("Backend not healthy")
-		return
-	}
-
-	resp, err := cl.Request([]byte("helloworld"), "EchoService", "Echo", trace_info)
-	fmt.Println(client.FormatTraceInfo(trace_info, 0))
+	ch, err := client.NewRpcChannel(client_security_manager)
 
 	if err != nil {
-		fmt.Println(err.Error())
-	} else {
-		fmt.Println("Received response:", string(resp), len(resp))
-	}
-	/// Times out on first try, returns an app error after
-	resp, err = cl.Request([]byte("helloworld"), "EchoService", "Error", trace_info)
-	fmt.Println(client.FormatTraceInfo(trace_info, 0))
-
-	if err != nil {
-		fmt.Println(err.Error())
-	} else {
-		fmt.Println("Received response:", string(resp), len(resp))
+		panic(err.Error())
 	}
 
-	/// Redirect us to somewhere else
+	ch.Connect(client.Peer(host, port))
 
-	resp, err = cl.Request([]byte("helloworld"), "EchoService", "Redirect", trace_info)
-	fmt.Println(client.FormatTraceInfo(trace_info, 0))
+	cl := client.NewClient("echo1_ncl", ch)
+	cl.SetTimeout(4*time.Second, false)
 
-	if err != nil {
-		fmt.Println(err.Error())
-	} else {
-		fmt.Println("Received response:", string(resp), len(resp))
+	if !cl.IsHealthy() {
+		panic("not healthy!")
 	}
 
-	// NOT_FOUND
+	trace := new(proto.TraceInfo)
+	rp := cl.NewRequest("EchoService", "Echo").SetTrace(trace).Go([]byte("helloworld_fromnew"))
 
-	resp, err = cl.Request([]byte("helloworld"), "EchoService", "DoesNotExist", trace_info)
-	fmt.Println(client.FormatTraceInfo(trace_info, 0))
-
-	if err != nil {
-		fmt.Println(err.Error())
-	} else {
-		fmt.Println("Received response:", string(resp), len(resp))
+	if !rp.Ok() {
+		panic(rp.Error())
 	}
+	fmt.Println("Received response (new):", string(rp.Payload()))
 
-	// Cascading function (calls other RPC)
-	resp, err = cl.Request([]byte("helloworld"), "EchoService", "CallOther", trace_info)
-	fmt.Println(client.FormatTraceInfo(trace_info, 0))
+	// Times out on first try...
+	rp = cl.NewRequest("EchoService", "Error").SetParameters(client.NewParams().Timeout(2 * time.Second).Retries(2)).Go([]byte("helloworld_fromnew_to"))
 
-	if err != nil {
-		fmt.Println(err.Error())
-	} else {
-		fmt.Println("Received response:", string(resp), len(resp))
+	if !rp.Ok() {
+		fmt.Println("Error:", rp.Error())
 	}
+	fmt.Println("Received response (new):", string(rp.Payload()))
 
+	// Non-existing endpoint
+	rp = cl.NewRequest("EchoService", "DoesNotExist").Go([]byte("helloworld_fromnew"))
+
+	if !rp.Ok() {
+		fmt.Println("Error:", rp.Error())
+	}
+	fmt.Println("Received response (new):", string(rp.Payload()))
+
+	// Cascading RPC
+	trace = new(proto.TraceInfo)
+	rp = cl.NewRequest("EchoService", "CallOther").SetTrace(trace).Go([]byte("helloworld_fromnew"))
+
+	if !rp.Ok() {
+		fmt.Println("Error:", rp.Error())
+	}
+	fmt.Println("Received response (new):", string(rp.Payload()))
+	fmt.Println(client.FormatTraceInfo(trace, 0))
 }
 
 func Aclient() {
-	acl, err := client.NewAsyncClient("echo1_acl", host, port, 1, client_security_manager)
+	acl, err := client.NewAsyncClient("echo1_acl", client.Peer(host, port), 1, client_security_manager)
 	if err != nil {
 		fmt.Println(err.Error())
 		return
@@ -282,13 +275,21 @@ var requestcount uint32 = 0
 var waitgroup sync.WaitGroup
 
 func benchClient(n int) {
-	cl, err := client.NewClient("echo1_cl", host, port, client_security_manager)
+	ch, err := client.NewRpcChannel(client_security_manager)
+
 	if err != nil {
-		fmt.Println(err.Error())
-		return
+		panic(err.Error())
 	}
-	defer cl.Close()
-	cl.SetTimeout(5 * time.Second)
+
+	err = ch.Connect(client.Peer(host, port))
+
+	if err != nil {
+		panic(err.Error())
+	}
+
+	cl := client.NewClient("echo1_cl", ch)
+	defer cl.Destroy()
+	cl.SetTimeout(5*time.Second, true)
 	waitgroup.Add(1)
 
 	for i := 0; i < n; i++ {
@@ -333,6 +334,8 @@ func main() {
 
 	flag.Parse()
 
+	rpclog.SetLoglevel(rpclog.LOGLEVEL_DEBUG)
+
 	if secure {
 		initializeSecurity(srv || srvbench)
 	}
@@ -362,7 +365,6 @@ func main() {
 	if srv {
 		Server()
 	} else if cl {
-		CachedClient()
 		Client()
 	} else if acl {
 		Aclient()
