@@ -26,6 +26,10 @@ func (pa *PeerAddress) toUrl() string {
 	return fmt.Sprintf("tcp://%s:%d", pa.host, pa.port)
 }
 
+func (pa *PeerAddress) toDebugStr() string {
+	return fmt.Sprintf("%s:%d", pa.host, pa.port)
+}
+
 func (pa *PeerAddress) equals(pa2 PeerAddress) bool {
 	return pa.host == pa2.host && pa.port == pa2.port
 }
@@ -134,6 +138,7 @@ func (c *RpcChannel) sendMessage(request []byte) error {
 	c.Lock()
 	defer c.Unlock()
 
+	log.CRPC_log(log.LOGLEVEL_DEBUG, "Sending request to", c.peers[0].toDebugStr(), "...")
 	_, err := c.channel.SendBytes(request, 0)
 
 	if err != nil {
@@ -145,6 +150,7 @@ func (c *RpcChannel) sendMessage(request []byte) error {
 
 func (c *RpcChannel) receiveMessage() ([]byte, error) {
 
+	log.CRPC_log(log.LOGLEVEL_DEBUG, "Waiting for response from", c.peers[0].toDebugStr(), "...")
 	msg, err := c.channel.RecvBytes(0)
 
 	if err != nil {

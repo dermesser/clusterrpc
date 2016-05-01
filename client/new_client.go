@@ -27,14 +27,20 @@ func (p *ClientParams) AcceptRedirects(b bool) *ClientParams {
 	p.accept_redirect = b
 	return p
 }
+
+// How often a request is to be retried. Default: 0
 func (p *ClientParams) Retries(r uint) *ClientParams {
 	p.retries = r
 	return p
 }
+
+// Whether to enable deadline propagation; that is, tell the server the time beyond which it doesn't need to bother returning a response.
 func (p *ClientParams) DeadlinePropagation(b bool) *ClientParams {
 	p.deadline_propagation = b
 	return p
 }
+
+// Set the timeout; this is used as network timeout and for the deadline propagation, if enabled.
 func (p *ClientParams) Timeout(d time.Duration) *ClientParams {
 	p.timeout = d
 	return p
@@ -142,7 +148,7 @@ func (r *Request) Go(payload []byte) Response {
 type ClientFilter (func(rq *Request, next_filter int) Response)
 
 // TODO: Add RedirectFilter
-var default_filters = []ClientFilter{TraceMergeFilter, RetryFilter, SendFilter}
+var default_filters = []ClientFilter{TraceMergeFilter, TimeoutFilter, RetryFilter, SendFilter}
 
 // Appends the received trace info to context or requested trace.
 func TraceMergeFilter(rq *Request, next int) Response {
@@ -159,9 +165,22 @@ func TraceMergeFilter(rq *Request, next int) Response {
 	return response
 }
 
+// Sets appropriate timeouts on the socket, only for this request
+func TimeoutFilter(rq *Request, next int) Response {
+	old_timeout, err := rq.client.channel.channel.GetRcvtimeo()
+
+	if err == nil {
+		rq.client.channel.SetTimeout(rq.params.timeout)
+		defer rq.client.channel.SetTimeout(old_timeout)
+	}
+
+	return rq.callNextFilter(next)
+}
+
 // A filter that retries a request according to the request's parameters.
 func RetryFilter(rq *Request, next int) Response {
 	attempts := int(rq.params.retries + 1)
+
 	last_response := Response{}
 	for i := 0; i < attempts; i++ {
 		response := rq.callNextFilter(next)
