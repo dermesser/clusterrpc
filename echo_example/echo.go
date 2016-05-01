@@ -60,28 +60,43 @@ func errorReturningHandler(cx *server.Context) {
 
 // Calls another procedure on the same server (itself)
 func callingHandler(cx *server.Context) {
-	cl, err := client.NewClient("caller", host, port, client_security_manager)
+	ch, err := client.NewRpcChannel(client_security_manager)
 
 	if err != nil {
-		cx.Success([]byte("heyho :'("))
+		cx.Success([]byte("heyho 1 :'("))
 		return
 	}
 
-	b, err := cl.RequestWithCtx(cx, []byte("xyz"), "EchoService", "Echo")
+	err = ch.Connect(client.Peer(host, port))
 
 	if err != nil {
-		cx.Success([]byte("heyho :''("))
+		cx.Success([]byte("heyho 2 :'("))
 		return
 	}
 
-	b, err = cl.RequestWithCtx(cx, []byte("xyz"), "EchoService", "Error")
+	cl := client.NewClient("caller", ch)
 
 	if err != nil {
-		cx.Success([]byte("heyho :''("))
+		cx.Success([]byte("heyho 3 :'("))
 		return
 	}
 
-	cx.Success(b)
+	rp := cl.NewRequest("EchoService", "Echo").SetContext(cx).Go([]byte("xyz"))
+
+	if !rp.Ok() {
+		cx.Success([]byte("heyho 4 :''("))
+		fmt.Println(rp.Error())
+		return
+	}
+
+	rp = cl.NewRequest("EchoService", "Error").SetContext(cx).Go([]byte("xyz"))
+
+	if !rp.Ok() {
+		cx.Success([]byte("heyho 5 :''("))
+		return
+	}
+
+	cx.Success(rp.Payload())
 }
 
 var i int32 = 0
@@ -124,19 +139,18 @@ func Server() {
 func CachedClient() {
 	cc := client.NewConnCache("echo1_cc")
 
-	cl, err := cc.Connect(host, port, client_security_manager)
+	cl, err := cc.Connect(client.Peer(host, port), client_security_manager)
 
 	if err != nil {
 		fmt.Println(err.Error())
 		return
 	}
-	cl.SetTimeout(5 * time.Second)
-	cl.SetHealthcheck(true)
+	cl.SetTimeout(5*time.Second, true)
 
 	cc.Return(&cl)
 
 	for i := 0; i < 5; i++ {
-		cl, err = cc.Connect(host, port, client_security_manager)
+		cl, err = cc.Connect(client.Peer(host, port), client_security_manager)
 
 		if err != nil {
 			fmt.Println(err.Error())
@@ -155,7 +169,7 @@ func CachedClient() {
 	}
 }
 
-func NewClient() {
+func Client() {
 	ch, err := client.NewRpcChannel(client_security_manager)
 
 	if err != nil {
@@ -164,7 +178,7 @@ func NewClient() {
 
 	ch.Connect(client.Peer(host, port))
 
-	cl := client.New_Client("echo1_ncl", ch)
+	cl := client.NewClient("echo1_ncl", ch)
 	cl.SetTimeout(4*time.Second, false)
 
 	if !cl.IsHealthy() {
@@ -207,7 +221,7 @@ func NewClient() {
 }
 
 func Aclient() {
-	acl, err := client.NewAsyncClient("echo1_acl", host, port, 1, client_security_manager)
+	acl, err := client.NewAsyncClient("echo1_acl", client.Peer(host, port), 1, client_security_manager)
 	if err != nil {
 		fmt.Println(err.Error())
 		return
@@ -261,13 +275,21 @@ var requestcount uint32 = 0
 var waitgroup sync.WaitGroup
 
 func benchClient(n int) {
-	cl, err := client.NewClient("echo1_cl", host, port, client_security_manager)
+	ch, err := client.NewRpcChannel(client_security_manager)
+
 	if err != nil {
-		fmt.Println(err.Error())
-		return
+		panic(err.Error())
 	}
-	defer cl.Close()
-	cl.SetTimeout(5 * time.Second)
+
+	err = ch.Connect(client.Peer(host, port))
+
+	if err != nil {
+		panic(err.Error())
+	}
+
+	cl := client.NewClient("echo1_cl", ch)
+	defer cl.Destroy()
+	cl.SetTimeout(5*time.Second, true)
 	waitgroup.Add(1)
 
 	for i := 0; i < n; i++ {
@@ -343,9 +365,7 @@ func main() {
 	if srv {
 		Server()
 	} else if cl {
-		//CachedClient()
-		//Client()
-		NewClient()
+		Client()
 	} else if acl {
 		Aclient()
 	} else if clbench > 0 {
