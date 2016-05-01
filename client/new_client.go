@@ -1,23 +1,14 @@
 package client
 
 import (
+	"clusterrpc/proto"
+	"clusterrpc/server"
+	"fmt"
 	golog "log"
 	"time"
+
+	pb "github.com/gogo/protobuf/proto"
 )
-
-// An RPC request that can be modified before it is sent.
-type Request struct {
-	service, endpoint string
-	sequence_number   uint64
-
-	finished_callback func()
-
-	params ClientParams
-}
-
-func (r *Request) SetParameters(p *ClientParams) {
-	r.params = *p
-}
 
 // Various parameters determining how a request is executed. There are builder methods to set the various parameters.
 type ClientParams struct {
@@ -30,6 +21,8 @@ type ClientParams struct {
 func NewParams() *ClientParams {
 	return &ClientParams{accept_redirect: true, retries: 0, deadline_propagation: false, timeout: 10 * time.Second}
 }
+
+// Whether to follow redirects issued by the server. May impact efficiency.
 func (p *ClientParams) AcceptRedirects(b bool) *ClientParams {
 	p.accept_redirect = b
 	return p
@@ -47,6 +40,178 @@ func (p *ClientParams) Timeout(d time.Duration) *ClientParams {
 	return p
 }
 
+type Response struct {
+	err      error
+	response *proto.RPCResponse
+}
+
+// Check whether the request was successful
+func (rp *Response) Ok() bool {
+	return rp.err == nil && rp.response.GetResponseStatus() == proto.RPCResponse_STATUS_OK
+}
+
+// Returns the response payload
+func (rp *Response) Payload() []byte {
+	return rp.response.GetResponseData()
+}
+
+// Unmarshals the response into msg
+func (rp *Response) GetResponseMessage(msg *pb.Message) error {
+	return pb.Unmarshal(rp.response.GetResponseData(), *msg)
+}
+
+// Get the error that has occurred.
+func (rp *Response) Error() string {
+	if rp.err != nil {
+		return rp.err.Error()
+	} else if rp.response.GetResponseStatus() != proto.RPCResponse_STATUS_OK {
+		return rp.response.GetResponseStatus().String()
+	} else {
+		return ""
+	}
+}
+
+// An RPC request that can be modified before it is sent.
+type Request struct {
+	client            *_Client
+	service, endpoint string
+	sequence_number   uint64
+
+	params ClientParams
+	ctx    *server.Context
+	trace  *proto.TraceInfo
+
+	// request payload
+	payload []byte
+}
+
+func (r *Request) SetParameters(p *ClientParams) *Request {
+	r.params = *p
+	return r
+}
+func (r *Request) SetContext(c *server.Context) *Request {
+	r.ctx = c
+	return r
+}
+func (r *Request) SetTrace(t *proto.TraceInfo) *Request {
+	r.trace = t
+	return r
+}
+
+func (r *Request) callNextFilter(index int) Response {
+	if len(r.client.filters) < index+1 {
+		panic("Bad filter setup: Not enough filters.")
+	}
+	return r.client.filters[index](r, index+1)
+}
+
+func (r *Request) makeRPCRequestProto() *proto.RPCRequest {
+	rq := new(proto.RPCRequest)
+	rq.CallerId = &r.client.name
+	rq.Data = r.payload
+	rq.Procedure = &r.endpoint
+	rq.SequenceNumber = &r.sequence_number
+	rq.Srvc = &r.service
+	rq.WantTrace = pb.Bool(r.trace != nil || r.ctx != nil)
+	if r.params.deadline_propagation {
+		rq.Deadline = pb.Int64((time.Now().UnixNano() + r.params.timeout.Nanoseconds()) / 1000)
+	}
+	return rq
+}
+
+// Send a request with a serialized protocol buffer
+func (r *Request) GoProto(msg pb.Message) Response {
+	payload, err := pb.Marshal(msg)
+	if err != nil {
+		return Response{err: err}
+	}
+	return r.Go(payload)
+}
+
+// Send a request.
+func (r *Request) Go(payload []byte) Response {
+	r.payload = payload
+	rp := r.callNextFilter(0)
+	r.client.request_active = false
+	return rp
+}
+
+// A ClientFilter is a function that is called with a request and fulfills a certain task.
+// Filters are stacked in _Client.filters; filters[0] is called first, and calls in turn filters[1]
+// until the last filter sends the message off to the network.
+type ClientFilter (func(rq *Request, next_filter int) Response)
+
+// TODO: Add RedirectFilter
+var default_filters = []ClientFilter{TraceMergeFilter, RetryFilter, SendFilter}
+
+// Appends the received trace info to context or requested trace.
+func TraceMergeFilter(rq *Request, next int) Response {
+	response := rq.callNextFilter(next)
+
+	if response.response != nil {
+		if rq.trace != nil {
+			*rq.trace = *response.response.GetTraceinfo()
+		}
+		if rq.ctx != nil {
+			rq.ctx.AppendCallTrace(response.response.GetTraceinfo())
+		}
+	}
+	return response
+}
+
+// A filter that retries a request according to the request's parameters.
+func RetryFilter(rq *Request, next int) Response {
+	attempts := int(rq.params.retries + 1)
+	last_response := Response{}
+	for i := 0; i < attempts; i++ {
+		response := rq.callNextFilter(next)
+
+		if response.err == nil {
+			return response
+		}
+		last_response = response
+		rq.client.channel.Reconnect()
+	}
+	return Response{err: fmt.Errorf("Retried %d times without success: %s", rq.params.retries, last_response.err.Error())}
+}
+
+// Send a request and wait for it to complete. Must be the last filter in the stack
+func SendFilter(rq *Request, next int) Response {
+	// Enforce that this is the last filter.
+	if len(rq.client.filters) != next {
+		panic("Bad filter setup")
+	}
+
+	message := rq.makeRPCRequestProto()
+	payload, err := message.Marshal()
+
+	if err != nil {
+		panic("Could not serialize RPCRequest!!")
+	}
+
+	rq.client.last_sent = time.Now()
+	err = rq.client.channel.sendMessage(payload)
+
+	if err != nil {
+		return Response{err: err}
+	}
+
+	response_payload, err := rq.client.channel.receiveMessage()
+
+	if err != nil {
+		return Response{err: err}
+	}
+
+	response := new(proto.RPCResponse)
+	err = response.Unmarshal(response_payload)
+
+	if err != nil {
+		return Response{err: err}
+	}
+
+	return Response{response: response}
+}
+
 // A (new) client object. It contains a channel
 type _Client struct {
 	channel RpcChannel
@@ -61,12 +226,14 @@ type _Client struct {
 
 	last_sent time.Time
 	rpclogger *golog.Logger
+
+	filters []ClientFilter
 }
 
 // Creates a new client from the channel.
 // Don't share a channel among two concurrently active clients.
-func _NewClient(name string, channel RpcChannel) _Client {
-	return _Client{name: name, channel: channel, active: true}
+func New_Client(name string, channel *RpcChannel) _Client {
+	return _Client{name: name, channel: *channel, active: true, filters: default_filters}
 }
 
 // Set socket timeout (default 10s) and whether to propagate this timeout through the call tree.
@@ -89,14 +256,10 @@ func (client *_Client) Destroy() {
 
 // Create a Request to be sent by this client.
 // If a previous request has not been finished, this method returns nil.
-func (client *_Client) Request(service, endpoint string) *Request {
+func (client *_Client) NewRequest(service, endpoint string) *Request {
 	if client.request_active {
 		return nil
 	}
 	client.request_active = true
-
-	// called by the Request.Send() method after having received an answer.
-	callback := func() { client.request_active = false }
-
-	return &Request{params: client.default_params, service: service, endpoint: endpoint, finished_callback: callback}
+	return &Request{client: client, params: client.default_params, service: service, endpoint: endpoint}
 }
