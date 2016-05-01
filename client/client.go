@@ -172,7 +172,11 @@ func TimeoutFilter(rq *Request, next int) Response {
 	old_timeout, err := rq.client.channel.channel.GetRcvtimeo()
 
 	if err == nil {
-		rq.client.channel.SetTimeout(rq.params.timeout)
+		if rq.ctx != nil && !rq.ctx.GetDeadline().IsZero() {
+			rq.client.channel.SetTimeout(rq.ctx.GetDeadline().Sub(time.Now()))
+		} else {
+			rq.client.channel.SetTimeout(rq.params.timeout)
+		}
 		defer rq.client.channel.SetTimeout(old_timeout)
 	}
 
@@ -263,7 +267,7 @@ type Client struct {
 // Creates a new client from the channel.
 // Don't share a channel among two concurrently active clients.
 func NewClient(name string, channel *RpcChannel) Client {
-	return Client{name: name, channel: *channel, active: true, filters: default_filters}
+	return Client{name: name, channel: *channel, active: true, default_params: *NewParams(), filters: default_filters}
 }
 
 // Set socket timeout (default 10s) and whether to propagate this timeout through the call tree.
