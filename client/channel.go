@@ -2,7 +2,6 @@ package client
 
 import (
 	"clusterrpc/log"
-	"clusterrpc/proto"
 	smgr "clusterrpc/securitymanager"
 	"fmt"
 	"sync"
@@ -58,7 +57,7 @@ func NewRpcChannel(security_manager *smgr.ClientSecurityManager) (*RpcChannel, e
 
 	if err != nil {
 		log.CRPC_log(log.LOGLEVEL_ERRORS, "Error when creating Req socket:", err.Error())
-		return nil, &RequestError{status: proto.RPCResponse_STATUS_CLIENT_NETWORK_ERROR, err: err}
+		return nil, err
 	}
 
 	if security_manager != nil {
@@ -66,7 +65,7 @@ func NewRpcChannel(security_manager *smgr.ClientSecurityManager) (*RpcChannel, e
 
 		if err != nil {
 			log.CRPC_log(log.LOGLEVEL_ERRORS, "Error when setting up security:", err.Error())
-			return nil, &RequestError{status: proto.RPCResponse_STATUS_CLIENT_NETWORK_ERROR, err: err}
+			return nil, err
 		}
 	}
 
