@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/rand"
 	"os"
+	"time"
 )
 
 const (
@@ -23,6 +25,7 @@ const (
 
 func init() {
 	logger = log.New(os.Stderr, "clusterrpc ", logger_flags)
+	rand.Seed(time.Now().UnixNano())
 }
 
 var logger *log.Logger
@@ -50,4 +53,14 @@ func CRPC_log(ll int, what ...interface{}) {
 	if ll <= loglevel {
 		logger.Printf("%s: %s", loglevel_to_string(loglevel), fmt.Sprintln(what...))
 	}
+}
+
+// Returns a short random alphanumeric string.
+// This is used to assign special tokens to RPCs in order to track them across log lines.
+func GetLogToken() string {
+	str := make([]byte, 6)
+	for i := range str {
+		str[i] = byte(65 + (rand.Int() % 26))
+	}
+	return string(str)
 }
