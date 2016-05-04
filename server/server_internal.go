@@ -311,7 +311,9 @@ func (srv *Server) acceptRequests(sock *zmq.Socket, worker_identity string) erro
 		msgs, err := sock.RecvMessageBytes(0)
 
 		if err == nil && len(msgs) == 4 {
-			log.CRPC_log(log.LOGLEVEL_DEBUG, fmt.Sprintf("Worker #%s received message from %x", worker_identity, msgs[0]))
+			if log.IsLoggingEnabled(log.LOGLEVEL_DEBUG) {
+				log.CRPC_log(log.LOGLEVEL_DEBUG, fmt.Sprintf("Worker #%s received message from %x", worker_identity, msgs[0]))
+			}
 
 			if bytes.Equal(msgs[3], MAGIC_STOP_STRING) {
 				log.CRPC_log(log.LOGLEVEL_DEBUG, fmt.Sprintf("Worker #%s stopped", worker_identity))
@@ -374,9 +376,11 @@ func (srv *Server) handleRequest(request *workerRequest, sock *zmq.Socket) {
 		return
 	}
 
-	log.CRPC_log(log.LOGLEVEL_DEBUG,
-		fmt.Sprintf("[%x/%s/%s] Calling endpoint %s.%s...",
-			request.client_id, caller_id, rqproto.GetRpcId(), rqproto.GetSrvc(), rqproto.GetProcedure()))
+	if log.IsLoggingEnabled(log.LOGLEVEL_DEBUG) {
+		log.CRPC_log(log.LOGLEVEL_DEBUG,
+			fmt.Sprintf("[%x/%s/%s] Calling endpoint %s.%s...",
+				request.client_id, caller_id, rqproto.GetRpcId(), rqproto.GetSrvc(), rqproto.GetProcedure()))
+	}
 
 	cx := srv.newContext(rqproto, srv.rpclogger)
 
@@ -407,7 +411,9 @@ func (srv *Server) handleRequest(request *workerRequest, sock *zmq.Socket) {
 			return
 		}
 
-		log.CRPC_log(log.LOGLEVEL_DEBUG, fmt.Sprintf("[%x/%s/%s] Sent response.", request.client_id, caller_id, rqproto.GetRpcId()))
+		if log.IsLoggingEnabled(log.LOGLEVEL_DEBUG) {
+			log.CRPC_log(log.LOGLEVEL_DEBUG, fmt.Sprintf("[%x/%s/%s] Sent response.", request.client_id, caller_id, rqproto.GetRpcId()))
+		}
 
 	}
 }

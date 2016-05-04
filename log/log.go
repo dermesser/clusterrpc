@@ -49,6 +49,11 @@ func SetLoglevel(ll int) {
 	loglevel = ll
 }
 
+// Performance-enhancer: Prevent unnecessary log calls
+func IsLoggingEnabled(ll int) bool {
+	return loglevel >= ll
+}
+
 func CRPC_log(ll int, what ...interface{}) {
 	if ll <= loglevel {
 		logger.Printf("%s: %s", loglevel_to_string(loglevel), fmt.Sprintln(what...))
