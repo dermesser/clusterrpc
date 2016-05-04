@@ -7,7 +7,6 @@ import (
 	"time"
 )
 
-
 // A ClientFilter is a function that is called with a request and fulfills a certain task.
 // Filters are stacked in Client.filters; filters[0] is called first, and calls in turn filters[1]
 // until the last filter sends the message off to the network.
@@ -126,5 +125,3 @@ func SendFilter(rq *Request, next int) Response {
 
 	return Response{response: response}
 }
-
->>>>>>> Remove EnableDebug() and replace sequence number with RpcId
