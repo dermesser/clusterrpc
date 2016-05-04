@@ -1,6 +1,7 @@
 package client
 
 import (
+	"clusterrpc/log"
 	"clusterrpc/proto"
 	"clusterrpc/server"
 	"time"
@@ -12,13 +13,12 @@ import (
 type Request struct {
 	client            *Client
 	service, endpoint string
-	sequence_number   uint64
 
 	params ClientParams
 	ctx    *server.Context
 	trace  *proto.TraceInfo
 
-	debug_token   string
+	rpcid         string
 	attempt_count int
 
 	// request payload
@@ -38,12 +38,6 @@ func (r *Request) SetTrace(t *proto.TraceInfo) *Request {
 	return r
 }
 
-// Enables detailed logging of the RPC
-func (r *Request) EnableDebug() *Request {
-	r.debug_token = log.GetLogToken()
-	return r
-}
-
 func (r *Request) callNextFilter(index int) Response {
 	if len(r.client.filters) < index+1 {
 		panic("Bad filter setup: Not enough filters.")
@@ -56,9 +50,9 @@ func (r *Request) makeRPCRequestProto() *proto.RPCRequest {
 	rq.CallerId = &r.client.name
 	rq.Data = r.payload
 	rq.Procedure = &r.endpoint
-	rq.SequenceNumber = &r.sequence_number
 	rq.Srvc = &r.service
 	rq.WantTrace = pb.Bool(r.trace != nil || r.ctx != nil)
+	rq.RpcId = &r.rpcid
 	if r.params.deadline_propagation {
 		rq.Deadline = pb.Int64((time.Now().UnixNano() + r.params.timeout.Nanoseconds()) / 1000)
 	}
@@ -76,6 +70,8 @@ func (r *Request) GoProto(msg pb.Message) Response {
 
 // Send a request.
 func (r *Request) Go(payload []byte) Response {
+	r.rpcid = log.GetLogToken()
+
 	r.payload = payload
 	rp := r.callNextFilter(0)
 	r.client.request_active = false

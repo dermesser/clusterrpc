@@ -51,8 +51,7 @@ type Client struct {
 
 	active bool
 	// To prevent hassle with the REQ state machine, we implement a similar one ourselves; as long as request_active == true, no new requests can be created
-	request_active  bool
-	sequence_number uint64
+	request_active bool
 
 	default_params ClientParams
 

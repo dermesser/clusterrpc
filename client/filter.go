@@ -7,6 +7,7 @@ import (
 	"time"
 )
 
+
 // A ClientFilter is a function that is called with a request and fulfills a certain task.
 // Filters are stacked in Client.filters; filters[0] is called first, and calls in turn filters[1]
 // until the last filter sends the message off to the network.
@@ -74,14 +75,14 @@ func RetryFilter(rq *Request, next int) Response {
 }
 
 func DebugFilter(rq *Request, next int) Response {
-	if len(rq.debug_token) != 0 {
-		log.CRPC_log(log.LOGLEVEL_INFO, "Sending RPC attempt #", rq.attempt_count, rq.debug_token, "to", rq.service, ".", rq.endpoint, "@", rq.client.channel.peers)
-		log.CRPC_log(log.LOGLEVEL_DEBUG, "Contents of", rq.debug_token, ":", string(rq.payload))
+	if len(rq.rpcid) != 0 {
+		log.CRPC_log(log.LOGLEVEL_INFO, "Sending RPC attempt #", rq.attempt_count, rq.rpcid, "to", rq.service, ".", rq.endpoint, "@", rq.client.channel.peers)
+		log.CRPC_log(log.LOGLEVEL_DEBUG, "Contents of", rq.rpcid, ":", string(rq.payload))
 		response := rq.callNextFilter(next)
 		if response.Ok() {
-			log.CRPC_log(log.LOGLEVEL_INFO, "Received response on", rq.debug_token, ":", string(response.Payload()))
+			log.CRPC_log(log.LOGLEVEL_INFO, "Received response on", rq.rpcid, ":", string(response.Payload()))
 		} else {
-			log.CRPC_log(log.LOGLEVEL_INFO, "Received error in response to", rq.debug_token, ":", response.Error())
+			log.CRPC_log(log.LOGLEVEL_INFO, "Received error in response to", rq.rpcid, ":", response.Error())
 		}
 		return response
 	} else {
@@ -125,3 +126,5 @@ func SendFilter(rq *Request, next int) Response {
 
 	return Response{response: response}
 }
+
+>>>>>>> Remove EnableDebug() and replace sequence number with RpcId

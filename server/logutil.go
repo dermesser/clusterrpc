@@ -56,8 +56,8 @@ func (ctx *Context) connIdString(size int) string {
 		dead_left = 0
 	}
 
-	return fmt.Sprintf("%s.%s %s/%d %d B [%d ms left]", ctx.orig_rq.GetSrvc(), ctx.orig_rq.GetProcedure(),
-		ctx.orig_rq.GetCallerId(), ctx.orig_rq.GetSequenceNumber(),
+	return fmt.Sprintf("%s.%s %s/%s %d B [%d ms left]", ctx.orig_rq.GetSrvc(), ctx.orig_rq.GetProcedure(),
+		ctx.orig_rq.GetCallerId(), ctx.orig_rq.GetRpcId(),
 		size, dead_left)
 }
 

@@ -11,7 +11,8 @@ message TraceInfo {
 }
 
 message RPCRequest {
-    required uint64 sequence_number = 1;
+    // A unique-ish ID for this RPC
+    optional string rpc_id = 1;
     required string srvc = 2;
     required string procedure = 3;
     required bytes data = 4;
@@ -22,7 +23,7 @@ message RPCRequest {
 }
 
 message RPCResponse {
-    required uint64 sequence_number = 1;
+    optional string rpc_id = 1;
 
     enum Status {
         // Default value

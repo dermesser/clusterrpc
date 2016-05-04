@@ -356,8 +356,8 @@ func (srv *Server) handleRequest(request *workerRequest, sock *zmq.Socket) {
 	if rqproto.GetDeadline() > 0 && time.Now().Unix() > rqproto.GetDeadline() {
 		delta := time.Now().Unix() - rqproto.GetDeadline()
 
-		log.CRPC_log(log.LOGLEVEL_WARNINGS, fmt.Sprintf("[%x/%s/%d] Timeout occurred, deadline was %d (%d s)",
-			request.client_id, caller_id, rqproto.GetSequenceNumber(), rqproto.GetDeadline(), delta))
+		log.CRPC_log(log.LOGLEVEL_WARNINGS, fmt.Sprintf("[%x/%s/%s] Timeout occurred, deadline was %d (%d s)",
+			request.client_id, caller_id, rqproto.GetRpcId(), rqproto.GetDeadline(), delta))
 
 		// Sending this to get the REQ socket in the right state
 		srv.sendError(sock, rqproto, proto.RPCResponse_STATUS_MISSED_DEADLINE, request)
@@ -368,15 +368,15 @@ func (srv *Server) handleRequest(request *workerRequest, sock *zmq.Socket) {
 
 	if handler == nil {
 		log.CRPC_log(log.LOGLEVEL_WARNINGS,
-			fmt.Sprintf("[%x/%s/%d] NOT_FOUND response to request for endpoint %s",
-				request.client_id, caller_id, rqproto.GetSequenceNumber(), rqproto.GetSrvc()+"."+rqproto.GetProcedure()))
+			fmt.Sprintf("[%x/%s/%s] NOT_FOUND response to request for endpoint %s",
+				request.client_id, caller_id, rqproto.GetRpcId(), rqproto.GetSrvc()+"."+rqproto.GetProcedure()))
 		srv.sendError(sock, rqproto, proto.RPCResponse_STATUS_NOT_FOUND, request)
 		return
 	}
 
 	log.CRPC_log(log.LOGLEVEL_DEBUG,
-		fmt.Sprintf("[%x/%s/%d] Calling endpoint %s.%s...",
-			request.client_id, caller_id, rqproto.GetSequenceNumber(), rqproto.GetSrvc(), rqproto.GetProcedure()))
+		fmt.Sprintf("[%x/%s/%s] Calling endpoint %s.%s...",
+			request.client_id, caller_id, rqproto.GetRpcId(), rqproto.GetSrvc(), rqproto.GetProcedure()))
 
 	cx := srv.newContext(rqproto, srv.rpclogger)
 
@@ -384,7 +384,7 @@ func (srv *Server) handleRequest(request *workerRequest, sock *zmq.Socket) {
 	handler(cx)
 
 	rpproto := cx.toRPCResponse()
-	rpproto.SequenceNumber = pb.Uint64(rqproto.GetSequenceNumber())
+	rpproto.RpcId = rqproto.RpcId
 
 	response_serialized, pberr := rpproto.Marshal()
 
@@ -392,8 +392,8 @@ func (srv *Server) handleRequest(request *workerRequest, sock *zmq.Socket) {
 		srv.sendError(sock, rqproto, proto.RPCResponse_STATUS_SERVER_ERROR, request)
 
 		log.CRPC_log(log.LOGLEVEL_ERRORS,
-			fmt.Sprintf("[%x/%s/%d] Error when serializing RPCResponse: %s",
-				request.client_id, caller_id, rqproto.GetSequenceNumber(), pberr.Error()))
+			fmt.Sprintf("[%x/%s/%s] Error when serializing RPCResponse: %s",
+				request.client_id, caller_id, rqproto.GetRpcId(), pberr.Error()))
 
 	} else {
 
@@ -401,13 +401,13 @@ func (srv *Server) handleRequest(request *workerRequest, sock *zmq.Socket) {
 
 		if err != nil {
 			log.CRPC_log(log.LOGLEVEL_WARNINGS,
-				fmt.Sprintf("[%x/%s/%d] Error when sending response; %s",
-					request.client_id, caller_id, rqproto.GetSequenceNumber(), err.Error()))
+				fmt.Sprintf("[%x/%s/%s] Error when sending response; %s",
+					request.client_id, caller_id, rqproto.GetRpcId(), err.Error()))
 
 			return
 		}
 
-		log.CRPC_log(log.LOGLEVEL_DEBUG, fmt.Sprintf("[%x/%s/%d] Sent response.", request.client_id, caller_id, rqproto.GetSequenceNumber()))
+		log.CRPC_log(log.LOGLEVEL_DEBUG, fmt.Sprintf("[%x/%s/%s] Sent response.", request.client_id, caller_id, rqproto.GetRpcId()))
 
 	}
 }
@@ -419,7 +419,7 @@ func (srv *Server) sendError(sock *zmq.Socket, rq *proto.RPCRequest, s proto.RPC
 	tmp_ctx.Fail(s.String())
 
 	response := tmp_ctx.toRPCResponse()
-	response.SequenceNumber = rq.SequenceNumber
+	response.RpcId = rq.RpcId
 	response.ResponseStatus = s.Enum()
 
 	buf, err := pb.Marshal(response)
