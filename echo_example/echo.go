@@ -186,7 +186,7 @@ func Client() {
 	}
 
 	trace := new(proto.TraceInfo)
-	rp := cl.NewRequest("EchoService", "Echo").SetTrace(trace).Go([]byte("helloworld_fromnew"))
+	rp := cl.NewRequest("EchoService", "Echo").SetTrace(trace).EnableDebug().Go([]byte("helloworld_fromnew"))
 
 	if !rp.Ok() {
 		panic(rp.Error())
@@ -194,7 +194,7 @@ func Client() {
 	fmt.Println("Received response (new):", string(rp.Payload()))
 
 	// Times out on first try...
-	rp = cl.NewRequest("EchoService", "Error").SetParameters(client.NewParams().Timeout(2 * time.Second).Retries(2)).Go([]byte("helloworld_fromnew_to"))
+	rp = cl.NewRequest("EchoService", "Error").SetParameters(client.NewParams().Timeout(2 * time.Second).Retries(2)).EnableDebug().Go([]byte("helloworld_fromnew_to"))
 
 	if !rp.Ok() {
 		fmt.Println("Error:", rp.Error())
@@ -202,7 +202,7 @@ func Client() {
 	fmt.Println("Received response (new):", string(rp.Payload()))
 
 	// Non-existing endpoint
-	rp = cl.NewRequest("EchoService", "DoesNotExist").Go([]byte("helloworld_fromnew"))
+	rp = cl.NewRequest("EchoService", "DoesNotExist").EnableDebug().Go([]byte("helloworld_fromnew"))
 
 	if !rp.Ok() {
 		fmt.Println("Error:", rp.Error())
