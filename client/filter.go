@@ -1,6 +1,7 @@
 package client
 
 import (
+	"clusterrpc/log"
 	"clusterrpc/proto"
 	"fmt"
 	"time"
@@ -12,7 +13,7 @@ import (
 type ClientFilter (func(rq *Request, next_filter int) Response)
 
 // TODO: Add RedirectFilter
-var default_filters = []ClientFilter{TraceMergeFilter, TimeoutFilter, RetryFilter, SendFilter}
+var default_filters = []ClientFilter{TraceMergeFilter, TimeoutFilter, RetryFilter, DebugFilter, SendFilter}
 
 // Appends the received trace info to context or requested trace.
 func TraceMergeFilter(rq *Request, next int) Response {
@@ -67,8 +68,25 @@ func RetryFilter(rq *Request, next int) Response {
 		}
 		last_response = response
 		rq.client.channel.Reconnect()
+		rq.attempt_count++
 	}
 	return Response{err: fmt.Errorf("Retried %d times without success: %s", rq.params.retries, last_response.err.Error())}
+}
+
+func DebugFilter(rq *Request, next int) Response {
+	if len(rq.debug_token) != 0 {
+		log.CRPC_log(log.LOGLEVEL_INFO, "Sending RPC attempt #", rq.attempt_count, rq.debug_token, "to", rq.service, ".", rq.endpoint, "@", rq.client.channel.peers)
+		log.CRPC_log(log.LOGLEVEL_DEBUG, "Contents of", rq.debug_token, ":", string(rq.payload))
+		response := rq.callNextFilter(next)
+		if response.Ok() {
+			log.CRPC_log(log.LOGLEVEL_INFO, "Received response on", rq.debug_token, ":", string(response.Payload()))
+		} else {
+			log.CRPC_log(log.LOGLEVEL_INFO, "Received error in response to", rq.debug_token, ":", response.Error())
+		}
+		return response
+	} else {
+		return rq.callNextFilter(next)
+	}
 }
 
 // Send a request and wait for it to complete. Must be the last filter in the stack

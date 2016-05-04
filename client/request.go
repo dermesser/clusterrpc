@@ -18,6 +18,9 @@ type Request struct {
 	ctx    *server.Context
 	trace  *proto.TraceInfo
 
+	debug_token   string
+	attempt_count int
+
 	// request payload
 	payload []byte
 }
@@ -32,6 +35,12 @@ func (r *Request) SetContext(c *server.Context) *Request {
 }
 func (r *Request) SetTrace(t *proto.TraceInfo) *Request {
 	r.trace = t
+	return r
+}
+
+// Enables detailed logging of the RPC
+func (r *Request) EnableDebug() *Request {
+	r.debug_token = log.GetLogToken()
 	return r
 }
 
