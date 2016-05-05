@@ -3,7 +3,6 @@ package server
 import (
 	"clusterrpc/proto"
 	"errors"
-	"fmt"
 	"log"
 	"time"
 
@@ -16,7 +15,7 @@ and takes the response.
 */
 type Context struct {
 	input, result                 []byte
-	failed, redirected            bool
+	failed                        bool
 	error_message                 string
 	redir_host                    string
 	redir_port                    uint
@@ -105,28 +104,6 @@ func (c *Context) Fail(msg string) {
 }
 
 /*
-Redirect to the given clusterrpc server. Keep in mind that this is not very efficient
-for the client as it has to open a new connection that lives only for the one request.
-The client will typically follow only one redirect (i.e. the server we redirected to can
-not redirect)
-*/
-func (c *Context) Redirect(host string, port uint) {
-	c.redir_host = host
-	c.redir_port = port
-	c.redirected = true
-}
-
-/*
-Tell the client to retry at host:port, service.endpoint. None of the values should be empty,
-otherwise the client gets confused.
-*/
-func (c *Context) RedirectEndpoint(host string, port uint, service, endpoint string) {
-	c.Redirect(host, port)
-	c.redir_service = service
-	c.redir_endpoint = endpoint
-}
-
-/*
 Set Success flag and the data to return to the caller.
 */
 func (c *Context) Success(data []byte) {
@@ -170,26 +147,12 @@ func (cx *Context) toRPCResponse() *proto.RPCResponse {
 		rpproto.ErrorMessage = pb.String("Exceeded deadline")
 	}
 
-	if cx.redirected {
-		rpproto.RedirHost = pb.String(cx.redir_host)
-		rpproto.RedirPort = pb.Uint32(uint32(cx.redir_port))
-		rpproto.RedirService = pb.String(cx.redir_service)
-		rpproto.RedirEndpoint = pb.String(cx.redir_endpoint)
-		rpproto.ResponseStatus = proto.RPCResponse_STATUS_REDIRECT.Enum()
-
-	}
-
 	// Tracing enabled
 	if cx.this_call != nil {
 		cx.this_call.RepliedTime = pb.Int64(time.Now().UnixNano() / 1000)
 
 		if cx.failed {
 			cx.this_call.ErrorMessage = pb.String(cx.error_message)
-		}
-
-		if cx.redirected {
-			cx.this_call.Redirect = pb.String(fmt.Sprintf("%s:%d/%s.%s", cx.redir_host, cx.redir_port,
-				cx.redir_service, cx.redir_endpoint))
 		}
 
 		rpproto.Traceinfo = cx.this_call

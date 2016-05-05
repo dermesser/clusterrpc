@@ -24,6 +24,7 @@ message RPCRequest {
 
 message RPCResponse {
     optional string rpc_id = 1;
+    optional bytes response_data = 2;
 
     enum Status {
         // Default value
@@ -32,8 +33,6 @@ message RPCResponse {
         STATUS_OK = 1;
         // service/endpoint not found (a.k.a. 404)
         STATUS_NOT_FOUND = 2;
-        // Please retry at redir_host:redir_port (a.k.a. 303/307)
-        STATUS_REDIRECT = 3;
         // The handler returned an error; see the error_message for a description (500). response_data may have content
         STATUS_NOT_OK = 4;
         // An error happened in the clusterrpc implementation (500)
@@ -42,8 +41,6 @@ message RPCResponse {
         STATUS_TIMEOUT = 6;
         // The server is overloaded (503)
         STATUS_OVERLOADED_RETRY = 7;
-        // We avoided a possible redirect loop, but could not get an answer.
-        STATUS_REDIRECT_TOO_OFTEN = 8;
         // We couldn't even send the request (PB serialization error, ...)
         STATUS_CLIENT_REQUEST_ERROR = 9;
         // We couldn't send the request because of network/socket issues.
@@ -59,16 +56,8 @@ message RPCResponse {
         STATUS_UNHEALTHY = 14;
     }
 
-    optional string redir_host = 2;
-    optional uint32 redir_port = 3;
-    optional string redir_service = 4;
-    optional string redir_endpoint = 5;
-
-    optional bytes response_data = 6;
-
-    required Status response_status = 7;
-    optional string error_message = 8;
-
-    optional TraceInfo traceinfo = 9;
+    required Status response_status = 3;
+    optional string error_message = 4;
+    optional TraceInfo traceinfo = 5;
 }
 

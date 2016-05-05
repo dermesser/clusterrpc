@@ -4,97 +4,97 @@ import "testing"
 import "container/list"
 
 func TestPush(t *testing.T) {
-	q := newQueue(3)
+	q := NewQueue(3)
 
-	a, b, c := q.push(3), q.push(4), q.push(5)
+	a, b, c := q.Push(3), q.Push(4), q.Push(5)
 
 	if !(a && b && c) {
-		t.Fatal("Could not push three elements")
+		t.Fatal("Could not Push three elements")
 	}
 }
 
 func TestPushLimit(t *testing.T) {
-	q := newQueue(2)
+	q := NewQueue(2)
 
-	a, b, c := q.push(3), q.push(4), q.push(5)
+	a, b, c := q.Push(3), q.Push(4), q.Push(5)
 
 	if !(a && b) && c {
-		t.Fatal("Could push last element:", a, b, c)
+		t.Fatal("Could Push last element:", a, b, c)
 	}
 }
 
 func TestPopEmpty(t *testing.T) {
-	q := newQueue(10)
+	q := NewQueue(10)
 
-	if nil != q.pop() {
-		t.Fatal("Could pop from empty queue")
+	if nil != q.Pop() {
+		t.Fatal("Could Pop from empty queue")
 	}
 }
 
 func TestPop(t *testing.T) {
-	q := newQueue(10)
+	q := NewQueue(10)
 
-	q.push(1)
-	q.push(2)
-	q.push(3)
+	q.Push(1)
+	q.Push(2)
+	q.Push(3)
 
-	a, b, c := q.pop().(int), q.pop().(int), q.pop().(int)
+	a, b, c := q.Pop().(int), q.Pop().(int), q.Pop().(int)
 
 	if a != 1 || b != 2 || c != 3 {
 		t.Fatal("Bad contents:", a, b, c)
 	}
 
-	if nil != q.pop() {
+	if nil != q.Pop() {
 		t.Fatal("Yields element past end")
 	}
 }
 
 func TestLen(t *testing.T) {
-	q := newQueue(10)
-	q.push(2)
-	q.push(3)
-	if q.len() != 2 {
-		t.Fatal("Wrong length", q.len())
+	q := NewQueue(10)
+	q.Push(2)
+	q.Push(3)
+	if q.Len() != 2 {
+		t.Fatal("Wrong length", q.Len())
 	}
 }
 func TestLen2(t *testing.T) {
-	q := newQueue(3)
-	q.push(2)
-	q.push(3)
-	q.push(4)
-	q.pop()
-	q.pop()
-	q.push(5)
-	if q.len() != 2 {
-		t.Fatal("Wrong length", q.len())
+	q := NewQueue(3)
+	q.Push(2)
+	q.Push(3)
+	q.Push(4)
+	q.Pop()
+	q.Pop()
+	q.Push(5)
+	if q.Len() != 2 {
+		t.Fatal("Wrong length", q.Len())
 	}
-	q.pop()
-	if q.pop().(int) != 5 {
+	q.Pop()
+	if q.Pop().(int) != 5 {
 		t.Fatal("Unexpected value")
 	}
 }
 
 func TestPeek(t *testing.T) {
-	q := newQueue(10)
-	q.push(2)
+	q := NewQueue(10)
+	q.Push(2)
 
 	if 2 != q.peek().(int) {
 		t.Fatal("Wrong element:", q.peek().(int))
 	}
 }
 
-// Benches time for pushing, then popping 10 elements from a long queue
+// Benches time for Pushing, then Popping 10 elements from a long queue
 func BenchmarkQueue(b *testing.B) {
-	q := newQueue(1000)
+	q := NewQueue(1000)
 
 	for i := 0; i < b.N; i++ {
 		for j := 0; j < 10; j++ {
-			if !q.push(j) {
-				b.Fatal("couldn't push")
+			if !q.Push(j) {
+				b.Fatal("couldn't Push")
 			}
 		}
 		for j := 0; j < 10; j++ {
-			if nil == q.pop() {
+			if nil == q.Pop() {
 				b.Fatal("got nil", i, j)
 			}
 		}
@@ -108,7 +108,7 @@ func BenchmarkQueueLinkedList(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		for j := 0; j < 10; j++ {
 			if nil == l.PushBack(i) {
-				b.Fatal("couldn't push")
+				b.Fatal("couldn't Push")
 			}
 		}
 		for j := 0; j < 10; j++ {
