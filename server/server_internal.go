@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"clusterrpc/log"
 	"clusterrpc/proto"
-	"container/list"
+	"clusterrpc/server/queue"
 	"fmt"
 	"time"
 
@@ -93,7 +93,7 @@ func (srv *Server) stop() error {
 	return nil
 }
 
-func (srv *Server) handleIncomingRpc(worker_queue *list.List, request_queue *list.List) {
+func (srv *Server) handleIncomingRpc(worker_queue *queue.Queue, request_queue *queue.Queue) {
 	// The message we're receiving here has this format: [client_identity, request_id, "", data].
 	msgs, err := srv.frontend_router.RecvMessageBytes(0)
 
@@ -118,9 +118,8 @@ func (srv *Server) handleIncomingRpc(worker_queue *list.List, request_queue *lis
 		srv.sendError(srv.frontend_router, request, proto.RPCResponse_STATUS_LOADSHED,
 			&workerRequest{client_id: msgs[0], request_id: msgs[1], data: msgs[3]})
 
-	} else if worker_id := worker_queue.Front(); worker_id != nil { // Find worker
-		_, err = srv.backend_router.SendMessage(worker_id.Value.([]byte), "", msgs) // [worker identity, "", client identity, "", RPCRequest]
-		worker_queue.Remove(worker_id)
+	} else if worker_id, ok := worker_queue.Pop().([]byte); ok { // Find worker
+		_, err = srv.backend_router.SendMessage(worker_id, "", msgs) // [worker identity, "", client identity, "", RPCRequest]
 
 		if err != nil {
 			if err.(zmq.Errno) != zmq.EHOSTUNREACH {
@@ -131,7 +130,7 @@ func (srv *Server) handleIncomingRpc(worker_queue *list.List, request_queue *lis
 		}
 
 	} else if uint(request_queue.Len()) < srv.n_threads*OUTSTANDING_REQUESTS_PER_THREAD { // We're only allowing so many queued requests to prevent from complete overloading
-		request_queue.PushBack(msgs)
+		request_queue.Push(msgs)
 
 		if request_queue.Len() > int(0.8*float64(srv.n_threads*OUTSTANDING_REQUESTS_PER_THREAD)) {
 			log.CRPC_log(log.LOGLEVEL_WARNINGS, "Queue is now at more than 80% fullness. Consider increasing # of workers: (qlen/cap)",
@@ -155,7 +154,7 @@ func (srv *Server) handleIncomingRpc(worker_queue *list.List, request_queue *lis
 }
 
 // Returns false if the server loop should be stopped
-func (srv *Server) handleWorkerResponse(worker_queue *list.List, request_queue *list.List) bool {
+func (srv *Server) handleWorkerResponse(worker_queue *queue.Queue, request_queue *queue.Queue) bool {
 	msgs, err := srv.backend_router.RecvMessageBytes(0) // [worker identity, "", client identity, request_id, "", RPCResponse]
 
 	if err != nil {
@@ -173,7 +172,7 @@ func (srv *Server) handleWorkerResponse(worker_queue *list.List, request_queue *
 	// if the app asks to stop
 	if bytes.Equal(msgs[5], MAGIC_READY_STRING) {
 
-		worker_queue.PushBack(backend_identity)
+		worker_queue.Push(backend_identity)
 
 	} else if bytes.Equal(msgs[5], MAGIC_STOP_STRING) {
 
@@ -188,7 +187,7 @@ func (srv *Server) handleWorkerResponse(worker_queue *list.List, request_queue *
 		return false
 
 	} else {
-		worker_queue.PushBack(backend_identity)
+		worker_queue.Push(backend_identity)
 		_, err := srv.frontend_router.SendMessage(msgs[2:]) // [client identity, request_id, "", RPCResponse]
 
 		if err != nil {
@@ -204,8 +203,8 @@ func (srv *Server) handleWorkerResponse(worker_queue *list.List, request_queue *
 
 	// Now that we have a new free worker, let's see if there's work in the queue...
 	if request_queue.Len() > 0 && worker_queue.Len() > 0 {
-		request_message := request_queue.Remove(request_queue.Front()).([][]byte)
-		worker_id := worker_queue.Remove(worker_queue.Front()).([]byte)
+		request_message := request_queue.Pop().([][]byte)
+		worker_id := worker_queue.Pop().([]byte)
 		_, err = srv.backend_router.SendMessage(worker_id, "", request_message) // [worker identity, "", client identity, request_id, "", RPCRequest]
 		if err != nil {
 			log.CRPC_log(log.LOGLEVEL_ERRORS, "Error when sending to backend router:", err.Error())
@@ -226,14 +225,14 @@ func (srv *Server) loadbalance() {
 	srv.lblock.Lock()
 	defer srv.lblock.Unlock()
 
-	// List of workers that are free -- list of []byte!
-	worker_queue := list.New()
+	// Queue of []byte
+	worker_queue := queue.NewQueue(int(srv.n_threads))
 
 	// request_queue is for incoming requests that find no available worker immediately.
 	// We're allowing a backlog of 50 outstanding requests per task; over that, we're dropping
 	//
-	// List of [][]byte!
-	request_queue := list.New()
+	// Queue of [][]byte!
+	request_queue := queue.NewQueue(50)
 
 	poller := zmq.NewPoller()
 	poller.Add(srv.frontend_router, zmq.POLLIN)
@@ -249,9 +248,9 @@ func (srv *Server) loadbalance() {
 			for _, sock := range polled {
 				switch s := sock.Socket; s {
 				case srv.frontend_router:
-					srv.handleIncomingRpc(worker_queue, request_queue)
+					srv.handleIncomingRpc(&worker_queue, &request_queue)
 				case srv.backend_router:
-					if !srv.handleWorkerResponse(worker_queue, request_queue) {
+					if !srv.handleWorkerResponse(&worker_queue, &request_queue) {
 						return
 					}
 				}
