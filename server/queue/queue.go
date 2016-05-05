@@ -4,6 +4,8 @@ package queue
 // Used for queuing both workers and requests.
 
 type genericQueue struct {
+	// tracking the length separately in l, because calculating it from (front, back)
+	// is difficult in some cases (especially rollover)
 	front, back, l int
 	queue          []interface{}
 }

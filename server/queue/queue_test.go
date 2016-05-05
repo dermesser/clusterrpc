@@ -68,6 +68,10 @@ func TestLen2(t *testing.T) {
 	if q.len() != 2 {
 		t.Fatal("Wrong length", q.len())
 	}
+	q.pop()
+	if q.pop().(int) != 5 {
+		t.Fatal("Unexpected value")
+	}
 }
 
 func TestPeek(t *testing.T) {
@@ -98,7 +102,7 @@ func BenchmarkQueue(b *testing.B) {
 }
 
 // Compare with linked list performance
-func BenchmarkLinkedList(b *testing.B) {
+func BenchmarkQueueLinkedList(b *testing.B) {
 	l := list.New()
 
 	for i := 0; i < b.N; i++ {
@@ -110,6 +114,22 @@ func BenchmarkLinkedList(b *testing.B) {
 		for j := 0; j < 10; j++ {
 			if nil == l.Remove(l.Front()) {
 				b.Fatal("got nil", i, j)
+			}
+		}
+	}
+}
+
+// Compare with chans
+func BenchmarkQueueChan(b *testing.B) {
+	c := make(chan int, 1000)
+
+	for i := 0; i < b.N; i++ {
+		for j := 0; j < 10; j++ {
+			c <- i
+		}
+		for j := 0; j < 10; j++ {
+			if -1 == <-c {
+				b.Fatal("unexpected value")
 			}
 		}
 	}
