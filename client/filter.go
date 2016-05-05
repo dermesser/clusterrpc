@@ -79,7 +79,8 @@ func DebugFilter(rq *Request, next int) Response {
 		log.CRPC_log(log.LOGLEVEL_DEBUG, "Contents of", rq.rpcid, ":", string(rq.payload))
 		response := rq.callNextFilter(next)
 		if response.Ok() {
-			log.CRPC_log(log.LOGLEVEL_INFO, "Received response on", rq.rpcid, ":", string(response.Payload()))
+			log.CRPC_log(log.LOGLEVEL_INFO, "Received response to", rq.rpcid, len(response.Payload()), "bytes")
+			log.CRPC_log(log.LOGLEVEL_DEBUG, "Contents of", rq.rpcid, ":", string(response.Payload()))
 		} else {
 			log.CRPC_log(log.LOGLEVEL_INFO, "Received error in response to", rq.rpcid, ":", response.Error())
 		}
