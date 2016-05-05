@@ -7,9 +7,6 @@ or
 
 	$ echo -cl
 
-When not using standard host (localhost) for binding the server, don't use '*' or '0.0.0.0'
-as the server will redirect and connect to itself using this address. Therefore you have
-to use an exact address, e.g. -host=192.168.1.23.
 */
 package main
 
@@ -101,10 +98,6 @@ func callingHandler(cx *server.Context) {
 
 var i int32 = 0
 
-func redirectHandler(cx *server.Context) {
-	cx.RedirectEndpoint(host, port, "EchoService", "Echo")
-}
-
 func Server() {
 	poolsize := uint(runtime.GOMAXPROCS(0))
 
@@ -127,7 +120,6 @@ func Server() {
 
 	srv.RegisterHandler("EchoService", "Echo", echoHandler)
 	srv.RegisterHandler("EchoService", "Error", errorReturningHandler)
-	srv.RegisterHandler("EchoService", "Redirect", redirectHandler)
 	srv.RegisterHandler("EchoService", "CallOther", callingHandler)
 	e := srv.Start()
 
@@ -241,9 +233,6 @@ func Aclient() {
 
 	/// Return an app error
 	acl.Request([]byte("helloworld"), "EchoService", "Error", callback)
-
-	/// Redirect us to somewhere else
-	acl.Request([]byte("helloworld"), "EchoService", "Redirect", callback)
 
 	time.Sleep(3 * time.Second)
 }
