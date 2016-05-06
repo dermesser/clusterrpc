@@ -4,7 +4,6 @@ import (
 	"clusterrpc/log"
 	smgr "clusterrpc/securitymanager"
 	"fmt"
-	"sync"
 	"time"
 
 	zmq "github.com/pebbe/zmq4"
@@ -61,7 +60,6 @@ func (pa *PeerAddress) equals(pa2 PeerAddress) bool {
 // A channel to an RPC server. It is threadsafe, but should not be shared among multiple clients.
 // TODO(lbo): Think about implementing a channel on top of DEALER, with a background goroutine delivering results to waiting requests.
 type RpcChannel struct {
-	sync.Mutex
 	channel *zmq.Socket
 
 	// Slices to allow multiple connections (round-robin)
@@ -93,6 +91,7 @@ func NewRpcChannel(security_manager *smgr.ClientSecurityManager) (*RpcChannel, e
 	channel.channel.SetIpv6(true)
 	channel.channel.SetLinger(0)
 	channel.channel.SetReconnectIvl(100 * time.Millisecond)
+	channel.channel.SetImmediate(true)
 
 	channel.channel.SetSndtimeo(10 * time.Second)
 	channel.channel.SetRcvtimeo(10 * time.Second)
@@ -105,9 +104,6 @@ func NewRpcChannel(security_manager *smgr.ClientSecurityManager) (*RpcChannel, e
 // Connect channel to adr.
 // (This adds the server to the set of connections of this channel; connections are used in a round-robin fashion)
 func (c *RpcChannel) Connect(addr PeerAddress) error {
-	c.Lock()
-	defer c.Unlock()
-
 	peer := addr.ToUrl()
 	c.channel.Disconnect(peer)
 	err := c.channel.Connect(peer)
@@ -123,9 +119,6 @@ func (c *RpcChannel) Connect(addr PeerAddress) error {
 
 // Disconnect the given peer (i.e., take it out of the connection pool)
 func (c *RpcChannel) Disconnect(peer PeerAddress) {
-	c.Lock()
-	defer c.Unlock()
-
 	for j := range c.peers {
 		if peer.equals(c.peers[j]) {
 			c.channel.Disconnect(peer.ToUrl())
@@ -148,40 +141,20 @@ func (c *RpcChannel) Reconnect() {
 }
 
 func (c *RpcChannel) SetTimeout(d time.Duration) {
-	c.Lock()
-	defer c.Unlock()
-
 	c.channel.SetSndtimeo(d)
 	c.channel.SetRcvtimeo(d)
 }
 
 func (c *RpcChannel) destroy() {
-	c.Lock()
-	defer c.Unlock()
-
 	c.channel.Close()
 }
 
 func (c *RpcChannel) sendMessage(request []byte) error {
-	c.Lock()
-	defer c.Unlock()
-
 	_, err := c.channel.SendBytes(request, 0)
-
-	if err != nil {
-		log.CRPC_log(log.LOGLEVEL_ERRORS, fmt.Sprintf("Could not send message to %s. Error: %s", c.peers[0].host, err.Error()))
-	}
-
 	return err
 }
 
 func (c *RpcChannel) receiveMessage() ([]byte, error) {
-
 	msg, err := c.channel.RecvBytes(0)
-
-	if err != nil {
-		log.CRPC_log(log.LOGLEVEL_ERRORS, fmt.Sprintf("Could not receive message from %s. Error: %s", c.peers[0].host, err.Error()))
-	}
-
 	return msg, err
 }
