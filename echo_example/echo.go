@@ -27,6 +27,7 @@ import (
 
 var port uint
 var host string
+var path string
 
 var timed_out bool = false
 
@@ -64,11 +65,20 @@ func callingHandler(cx *server.Context) {
 		return
 	}
 
-	err = ch.Connect(client.Peer(host, port))
+	if path == "" {
+		err = ch.Connect(client.Peer(host, port))
 
-	if err != nil {
-		cx.Success([]byte("heyho 2 :'("))
-		return
+		if err != nil {
+			cx.Success([]byte("heyho 2 :'("))
+			return
+		}
+	} else {
+		err = ch.Connect(client.IPCPeer(path))
+
+		if err != nil {
+			cx.Success([]byte("heyho 2 :'("))
+			return
+		}
 	}
 
 	cl := client.NewClient("caller", ch)
@@ -106,10 +116,21 @@ func Server() {
 		poolsize = 4
 	}
 
-	srv, err := server.NewServer(host, port, poolsize, server_security_manager) // don't set GOMAXPROCS if you want to test the loadbalancer (for correct queuing)
+	var srv *server.Server
+	var err error
 
-	if err != nil {
-		return
+	if path == "" {
+		srv, err = server.NewServer(host, port, poolsize, server_security_manager) // don't set GOMAXPROCS if you want to test the loadbalancer (for correct queuing)
+
+		if err != nil {
+			return
+		}
+	} else {
+		srv, err = server.NewIPCServer(path, poolsize, server_security_manager)
+
+		if err != nil {
+			return
+		}
 	}
 
 	hostname, err := os.Hostname()
@@ -168,7 +189,11 @@ func Client() {
 		panic(err.Error())
 	}
 
-	ch.Connect(client.Peer(host, port))
+	if path == "" {
+		ch.Connect(client.Peer(host, port))
+	} else {
+		ch.Connect(client.IPCPeer(path))
+	}
 
 	cl := client.NewClient("echo1_ncl", ch)
 	cl.SetTimeout(4*time.Second, false)
@@ -213,12 +238,23 @@ func Client() {
 }
 
 func Aclient() {
-	acl, err := client.NewAsyncClient("echo1_acl", client.Peer(host, port), 1, client_security_manager)
-	if err != nil {
-		fmt.Println(err.Error())
-		return
+	var acl *client.AsyncClient
+
+	if path == "" {
+		acl, err := client.NewAsyncClient("echo1_acl", client.Peer(host, port), 1, client_security_manager)
+		if err != nil {
+			fmt.Println(err.Error())
+			return
+		}
+		defer acl.Close()
+	} else {
+		acl, err := client.NewAsyncClient("echo1_acl", client.IPCPeer(path), 1, client_security_manager)
+		if err != nil {
+			fmt.Println(err.Error())
+			return
+		}
+		defer acl.Close()
 	}
-	defer acl.Close()
 
 	callback := func(rp []byte, e error) {
 		if e == nil {
@@ -245,10 +281,21 @@ func benchServer() {
 		poolsize = 2
 	}
 
-	srv, err := server.NewServer(host, port, poolsize, server_security_manager)
+	var srv *server.Server
+	var err error
 
-	if err != nil {
-		return
+	if path == "" {
+		srv, err = server.NewServer(host, port, poolsize, server_security_manager)
+
+		if err != nil {
+			return
+		}
+	} else {
+		srv, err = server.NewIPCServer(path, poolsize, server_security_manager)
+
+		if err != nil {
+			return
+		}
 	}
 
 	srv.RegisterHandler("EchoService", "Echo", silentEchoHandler)
@@ -270,10 +317,18 @@ func benchClient(n int) {
 		panic(err.Error())
 	}
 
-	err = ch.Connect(client.Peer(host, port))
+	if path == "" {
+		err = ch.Connect(client.Peer(host, port))
 
-	if err != nil {
-		panic(err.Error())
+		if err != nil {
+			panic(err.Error())
+		}
+	} else {
+		err = ch.Connect(client.IPCPeer(path))
+
+		if err != nil {
+			panic(err.Error())
+		}
 	}
 
 	cl := client.NewClient("echo1_cl", ch)
@@ -314,6 +369,7 @@ func main() {
 	flag.StringVar(&host, "host", "127.0.0.1", "Remote host (hostname or IP)")
 	// Global var
 	flag.UintVar(&port, "port", 9000, "Remote port")
+	flag.StringVar(&path, "path", "", "If set, use a UNIX socket at this location instead of TCP/IP")
 	flag.BoolVar(&srv, "srv", false, "Run server (localhost:9000)")
 	flag.BoolVar(&srvbench, "srvbench", false, "Run benchmark server (LOGLEVEL_ERRORS, GOMAXPROCS threads, only Echo)")
 
