@@ -32,7 +32,7 @@ func (srv *Server) stop() error {
 	log.CRPC_log(log.LOGLEVEL_INFO, "Stopping workers...")
 
 	// First stop all worker threads
-	for i := uint(0); i < srv.n_threads; i++ {
+	for i := uint(0); i < srv.workers; i++ {
 		_, err := srv.backend_router.SendMessage(
 			fmt.Sprintf("%d", i), "", []byte{0xde, 0xad, 0xde, 0xad}, "BOGUS_RQID", "", MAGIC_STOP_STRING) // [worker identity, "", client identity, request_id, "", RPCRequest]
 		if err != nil {
@@ -129,12 +129,12 @@ func (srv *Server) handleIncomingRpc(worker_queue *queue.Queue, request_queue *q
 			}
 		}
 
-	} else if uint(request_queue.Len()) < srv.n_threads*OUTSTANDING_REQUESTS_PER_THREAD { // We're only allowing so many queued requests to prevent from complete overloading
+	} else if uint(request_queue.Len()) < srv.workers*OUTSTANDING_REQUESTS_PER_THREAD { // We're only allowing so many queued requests to prevent from complete overloading
 		request_queue.Push(msgs)
 
-		if request_queue.Len() > int(0.8*float64(srv.n_threads*OUTSTANDING_REQUESTS_PER_THREAD)) {
+		if request_queue.Len() > int(0.8*float64(srv.workers*OUTSTANDING_REQUESTS_PER_THREAD)) {
 			log.CRPC_log(log.LOGLEVEL_WARNINGS, "Queue is now at more than 80% fullness. Consider increasing # of workers: (qlen/cap)",
-				request_queue.Len(), srv.n_threads*OUTSTANDING_REQUESTS_PER_THREAD)
+				request_queue.Len(), srv.workers*OUTSTANDING_REQUESTS_PER_THREAD)
 
 		}
 	} else {
@@ -226,7 +226,7 @@ func (srv *Server) loadbalance() {
 	defer srv.lblock.Unlock()
 
 	// Queue of []byte
-	worker_queue := queue.NewQueue(int(srv.n_threads))
+	worker_queue := queue.NewQueue(int(srv.workers))
 
 	// request_queue is for incoming requests that find no available worker immediately.
 	// We're allowing a backlog of 50 outstanding requests per task; over that, we're dropping

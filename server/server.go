@@ -22,7 +22,7 @@ type Server struct {
 	services                        map[string]*service
 	// The timeout only applies on client connections (R/W), not the Listener
 	timeout      time.Duration
-	n_threads    uint
+	workers      uint
 	machine_name string
 	// Respond "no" to healthchecks
 	lameduck_state bool
@@ -57,7 +57,17 @@ Use the setter functions described below before calling Start(), otherwise they 
 be ignored.
 
 */
-func NewServer(laddr string, port uint, worker_threads uint, security_manager *smgr.ServerSecurityManager) (*Server, error) {
+func NewServer(host string, port uint, threads uint, security_manager *smgr.ServerSecurityManager) (*Server, error) {
+	return newServer([]string{fmt.Sprintf("tcp://%s:%d", host, port)},
+		threads,
+		security_manager)
+}
+
+func NewIPCServer(path string, threads uint, security_manager *smgr.ServerSecurityManager) (*Server, error) {
+	return newServer([]string{fmt.Sprintf("ipc://%s", path)}, threads, security_manager)
+}
+
+func newServer(bindurls []string, worker_threads uint, security_manager *smgr.ServerSecurityManager) (*Server, error) {
 
 	srv := new(Server)
 	srv.services = make(map[string]*service)
@@ -67,7 +77,7 @@ func NewServer(laddr string, port uint, worker_threads uint, security_manager *s
 		worker_threads = 1
 	}
 
-	srv.n_threads = worker_threads
+	srv.workers = worker_threads
 
 	srv.RegisterHandler("__CLUSTERRPC", "Health", makeHealthHandler(&srv.lameduck_state))
 	srv.RegisterHandler("__CLUSTERRPC", "Ping", pingHandler)
@@ -82,35 +92,33 @@ func NewServer(laddr string, port uint, worker_threads uint, security_manager *s
 		return nil, err
 	}
 
-	if err != nil {
-		log.CRPC_log(log.LOGLEVEL_WARNINGS, "Could not enable IPv6 on frontend router:", err.Error())
-		return nil, err
-	}
-
 	srv.frontend_router.SetRouterMandatory(1)
 	srv.frontend_router.SetSndtimeo(srv.timeout)
 	srv.frontend_router.SetRcvtimeo(srv.timeout)
 
-	log.CRPC_log(log.LOGLEVEL_INFO, "Binding frontend to TCP address", fmt.Sprintf("tcp://%s:%d", laddr, port))
-
 	err = security_manager.ApplyToServerSocket(srv.frontend_router)
 
 	if err != nil {
+		srv.frontend_router.Close()
 		return nil, err
 	}
 
-	err = srv.frontend_router.Bind(fmt.Sprintf("tcp://%s:%d", laddr, port))
+	for _, bindurl := range bindurls {
+		log.CRPC_log(log.LOGLEVEL_INFO, "Binding frontend to ", bindurl)
+		err = srv.frontend_router.Bind(bindurl)
+		if err != nil {
+			log.CRPC_log(log.LOGLEVEL_ERRORS, "Error when binding Router socket:", err.Error())
+			srv.frontend_router.Close()
+			return nil, err
+		}
 
-	if err != nil {
-		log.CRPC_log(log.LOGLEVEL_ERRORS, "Error when binding Router socket:", err.Error())
-		return nil, err
 	}
 
 	srv.backend_router, err = zmq.NewSocket(zmq.ROUTER)
 
 	if err != nil {
 		log.CRPC_log(log.LOGLEVEL_ERRORS, "Error when creating backend router socket:", err.Error())
-		srv = nil
+		srv.frontend_router.Close()
 		return nil, err
 	}
 
@@ -118,7 +126,8 @@ func NewServer(laddr string, port uint, worker_threads uint, security_manager *s
 
 	if err != nil {
 		log.CRPC_log(log.LOGLEVEL_ERRORS, "Error when binding backend router socket:", err.Error())
-		srv = nil
+		srv.frontend_router.Close()
+		srv.backend_router.Close()
 		return nil, err
 	}
 
@@ -138,14 +147,14 @@ otherwise nil. The error is logged at any LOGLEVEL.
 func (srv *Server) Start() error {
 
 	var i uint
-	for i = 0; i < srv.n_threads-1; i++ {
+	for i = 0; i < srv.workers-1; i++ {
 		err := srv.thread(i, true)
 
 		if err != nil {
 			return err
 		}
 	}
-	return srv.thread(srv.n_threads-1, false)
+	return srv.thread(srv.workers-1, false)
 }
 
 // Connect to loadbalancer thread and send special stop message.
@@ -158,7 +167,6 @@ func (srv *Server) Stop() error {
 func (srv *Server) Close() {
 	srv.frontend_router.Close()
 	srv.backend_router.Close()
-	zmq.Term()
 }
 
 /*
