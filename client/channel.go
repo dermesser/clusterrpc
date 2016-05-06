@@ -14,6 +14,8 @@ import (
 type PeerAddress struct {
 	host string
 	port uint
+
+	path string
 }
 
 // Construct a new peer address.
@@ -21,12 +23,28 @@ func Peer(host string, port uint) PeerAddress {
 	return PeerAddress{host: host, port: port}
 }
 
-func (pa *PeerAddress) toUrl() string {
-	return fmt.Sprintf("tcp://%s:%d", pa.host, pa.port)
+func IPCPeer(path string) PeerAddress {
+	return PeerAddress{path: path}
+}
+
+func (pa *PeerAddress) ToUrl() string {
+	if pa.host != "" {
+		return fmt.Sprintf("tcp://%s:%d", pa.host, pa.port)
+	} else if pa.path != "" {
+		return fmt.Sprintf("ipc://%s", pa.path)
+	} else {
+		return ""
+	}
 }
 
 func (pa *PeerAddress) toDebugStr() string {
-	return fmt.Sprintf("%s:%d", pa.host, pa.port)
+	if pa.host != "" {
+		return fmt.Sprintf("%s:%d", pa.host, pa.port)
+	} else if pa.path != "" {
+		return fmt.Sprintf("%s", pa.path)
+	} else {
+		return ""
+	}
 }
 
 func (pa *PeerAddress) String() string {
@@ -37,7 +55,7 @@ func (pa *PeerAddress) GoString() string {
 }
 
 func (pa *PeerAddress) equals(pa2 PeerAddress) bool {
-	return pa.host == pa2.host && pa.port == pa2.port
+	return (pa.host != "" && pa.host == pa2.host && pa.port == pa2.port) || (pa.path != "" && pa.path == pa2.path)
 }
 
 // A channel to an RPC server. It is threadsafe, but should not be shared among multiple clients.
@@ -90,7 +108,7 @@ func (c *RpcChannel) Connect(addr PeerAddress) error {
 	c.Lock()
 	defer c.Unlock()
 
-	peer := addr.toUrl()
+	peer := addr.ToUrl()
 	c.channel.Disconnect(peer)
 	err := c.channel.Connect(peer)
 
@@ -110,8 +128,9 @@ func (c *RpcChannel) Disconnect(peer PeerAddress) {
 
 	for j := range c.peers {
 		if peer.equals(c.peers[j]) {
-			c.channel.Disconnect(peer.toUrl())
-			c.peers = append(c.peers[0:j], c.peers[j:]...)
+			fmt.Println(peer.ToUrl())
+			c.channel.Disconnect(peer.ToUrl())
+			c.peers = append(c.peers[0:j], c.peers[j+1:]...)
 			break
 		}
 	}
@@ -119,8 +138,13 @@ func (c *RpcChannel) Disconnect(peer PeerAddress) {
 
 // First disconnect, then reconnect to all peers.
 func (c *RpcChannel) Reconnect() {
-	for _, p := range c.peers {
+	peers := make([]PeerAddress, len(c.peers))
+	copy(peers, c.peers)
+	fmt.Println(c.peers)
+	for _, p := range peers {
 		c.Disconnect(p)
+	}
+	for _, p := range peers {
 		c.Connect(p)
 	}
 }
