@@ -128,7 +128,6 @@ func (c *RpcChannel) Disconnect(peer PeerAddress) {
 
 	for j := range c.peers {
 		if peer.equals(c.peers[j]) {
-			fmt.Println(peer.ToUrl())
 			c.channel.Disconnect(peer.ToUrl())
 			c.peers = append(c.peers[0:j], c.peers[j+1:]...)
 			break
@@ -140,7 +139,6 @@ func (c *RpcChannel) Disconnect(peer PeerAddress) {
 func (c *RpcChannel) Reconnect() {
 	peers := make([]PeerAddress, len(c.peers))
 	copy(peers, c.peers)
-	fmt.Println(c.peers)
 	for _, p := range peers {
 		c.Disconnect(p)
 	}
