@@ -91,6 +91,10 @@ func (c *Context) GetDeadline() time.Time {
 	return c.deadline
 }
 
+func (c *Context) GetDeadlineNotifier() <-chan time.Time {
+	return time.After(c.deadline.Sub(time.Now()))
+}
+
 /*
 Fail with msg as error message (gets sent back to the client)
 */
@@ -135,13 +139,6 @@ func (cx *Context) toRPCResponse() *proto.RPCResponse {
 	} else {
 		rpproto.ResponseStatus = proto.RPCResponse_STATUS_NOT_OK.Enum()
 		rpproto.ErrorMessage = pb.String(cx.error_message)
-	}
-
-	// Went over deadline
-	if cx.deadline.UnixNano() > 0 && time.Now().UnixNano() > cx.deadline.UnixNano() {
-		rpproto.ResponseData = []byte{}
-		rpproto.ResponseStatus = proto.RPCResponse_STATUS_MISSED_DEADLINE.Enum()
-		rpproto.ErrorMessage = pb.String("Exceeded deadline")
 	}
 
 	// Tracing enabled
