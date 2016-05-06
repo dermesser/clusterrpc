@@ -14,13 +14,10 @@ Opaque structure that contains request information
 and takes the response.
 */
 type Context struct {
-	input, result                 []byte
-	failed                        bool
-	error_message                 string
-	redir_host                    string
-	redir_port                    uint
-	redir_service, redir_endpoint string
-	deadline                      time.Time
+	input, result []byte
+	failed        bool
+	error_message string
+	deadline      time.Time
 	// Tracing info
 	this_call *proto.TraceInfo
 
