@@ -67,6 +67,8 @@ func RetryFilter(rq *Request, next int) Response {
 			return response
 		}
 		last_response = response
+		// This can be removed once https://github.com/zeromq/libzmq/issues/1690 is released
+		// (not in zeromq 4.1.4). tl;dr: Send() blocks even if REQ_RELAXED is enabled because an internal pipe is closed.
 		rq.client.channel.Reconnect()
 		rq.attempt_count++
 	}
