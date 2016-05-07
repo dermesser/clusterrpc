@@ -95,9 +95,15 @@ func (client *Client) NewRequest(service, endpoint string) *Request {
 	return &Request{client: client, params: client.default_params, service: service, endpoint: endpoint}
 }
 
-// Sends a request to the server, asking whether it accepts requests
+// Sends a request to the server, asking whether it accepts requests and testing general connectivity.
+// Uses a timeout of 1 second.
 func (client *Client) IsHealthy() bool {
-	rp := client.NewRequest("__CLUSTERRPC", "Health").SetParameters(NewParams().Timeout(1 * time.Second)).Go([]byte{})
+	return client.IsHealthyWithin(1 * time.Second)
+}
+
+// Same as IsHealthy(), but with a configurable timeout
+func (client *Client) IsHealthyWithin(d time.Duration) bool {
+	rp := client.NewRequest("__CLUSTERRPC", "Health").SetParameters(NewParams().Timeout(d)).Go([]byte{})
 	return rp.Ok()
 }
 
