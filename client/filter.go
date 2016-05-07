@@ -76,20 +76,23 @@ func RetryFilter(rq *Request, next int) Response {
 }
 
 func DebugFilter(rq *Request, next int) Response {
-	if len(rq.rpcid) != 0 {
+	// Prevent all the logging calls if we're note interested
+	if log.IsLoggingEnabled(log.LOGLEVEL_INFO) {
 		log.CRPC_log(log.LOGLEVEL_INFO, "Sending RPC attempt #", rq.attempt_count, rq.rpcid, "to", rq.service, ".", rq.endpoint, "@", rq.client.channel.peers)
 		log.CRPC_log(log.LOGLEVEL_DEBUG, "Contents of", rq.rpcid, ":", string(rq.payload))
+
+		request_time := time.Now()
 		response := rq.callNextFilter(next)
+
 		if response.Ok() {
-			log.CRPC_log(log.LOGLEVEL_INFO, "Received response to", rq.rpcid, len(response.Payload()), "bytes")
+			log.CRPC_log(log.LOGLEVEL_INFO, fmt.Sprintf("Received response to %s (%d B) - [%v]", rq.rpcid, len(response.Payload()), time.Now().Sub(request_time)))
 			log.CRPC_log(log.LOGLEVEL_DEBUG, "Contents of", rq.rpcid, ":", string(response.Payload()))
 		} else {
-			log.CRPC_log(log.LOGLEVEL_INFO, "Received error in response to", rq.rpcid, ":", response.Error())
+			log.CRPC_log(log.LOGLEVEL_INFO, fmt.Sprintf("Received error in response to %s: %s [%v]", rq.rpcid, response.Error(), time.Now().Sub(request_time)))
 		}
 		return response
-	} else {
-		return rq.callNextFilter(next)
 	}
+	return rq.callNextFilter(next)
 }
 
 // Send a request and wait for it to complete. Must be the last filter in the stack
