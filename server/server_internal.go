@@ -345,8 +345,6 @@ func (srv *Server) handleRequest(request *workerRequest, sock *zmq.Socket) {
 
 	if pberr != nil {
 		log.CRPC_log(log.LOGLEVEL_ERRORS, fmt.Sprintf("[%x/_/_] PB unmarshaling error: %s", request.client_id, pberr.Error()))
-
-		// We can't send an error response because we don't even have a sequence number
 		srv.sendError(sock, rqproto, proto.RPCResponse_STATUS_SERVER_ERROR, request)
 		return
 	}
