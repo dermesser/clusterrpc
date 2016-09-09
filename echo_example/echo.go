@@ -239,16 +239,17 @@ func Client() {
 
 func Aclient() {
 	var acl *client.AsyncClient
+	var err error
 
 	if path == "" {
-		acl, err := client.NewAsyncClient("echo1_acl", client.Peer(host, port), 1, client_security_manager)
+		acl, err = client.NewAsyncClient("echo1_acl", client.Peer(host, port), 1, client_security_manager)
 		if err != nil {
 			fmt.Println(err.Error())
 			return
 		}
 		defer acl.Close()
 	} else {
-		acl, err := client.NewAsyncClient("echo1_acl", client.IPCPeer(path), 1, client_security_manager)
+		acl, err = client.NewAsyncClient("echo1_acl", client.IPCPeer(path), 1, client_security_manager)
 		if err != nil {
 			fmt.Println(err.Error())
 			return
