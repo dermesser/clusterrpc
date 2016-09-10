@@ -124,9 +124,7 @@ func (mgr *ServerSecurityManager) ResetBlackWhiteLists() {
 func (mgr *ServerSecurityManager) WhitelistClients(addrs ...string) {
 	mgr.denied_client_addresses = nil
 
-	for _, c := range addrs {
-		mgr.allowed_client_addresses = append(mgr.allowed_client_addresses, c)
-	}
+	mgr.allowed_client_addresses = append(mgr.allowed_client_addresses, addrs...)
 }
 
 // Add clients to the blacklist (IP addresses or ranges) to the blacklist. A blacklist is mutually exclusive with a
@@ -134,7 +132,5 @@ func (mgr *ServerSecurityManager) WhitelistClients(addrs ...string) {
 func (mgr *ServerSecurityManager) BlacklistClients(addrs ...string) {
 	mgr.allowed_client_addresses = nil
 
-	for _, c := range addrs {
-		mgr.denied_client_addresses = append(mgr.denied_client_addresses, c)
-	}
+	mgr.denied_client_addresses = append(mgr.denied_client_addresses, addrs...)
 }
