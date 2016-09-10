@@ -105,9 +105,7 @@ func (mgr *ServerSecurityManager) GetPublicKey() string {
 
 // Add keys of clients that are accepted.
 func (mgr *ServerSecurityManager) AddClientKeys(keys ...string) {
-	for _, k := range keys {
-		mgr.allowed_client_keys = append(mgr.allowed_client_keys, k)
-	}
+	mgr.allowed_client_keys = append(mgr.allowed_client_keys, keys...)
 }
 
 // Remove all clients from the whitelist, effectively enforcing an OPEN policy
