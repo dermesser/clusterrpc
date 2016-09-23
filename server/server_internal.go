@@ -34,7 +34,7 @@ func (srv *Server) stop() error {
 	// First stop all worker threads
 	for i := uint(0); i < srv.workers; i++ {
 		_, err := srv.backend_router.SendMessage(
-			fmt.Sprintf("%d", i), "", []byte{0xde, 0xad, 0xde, 0xad}, "BOGUS_RQID", "", MAGIC_STOP_STRING) // [worker identity, "", client identity, request_id, "", RPCRequest]
+			fmt.Sprintf("%d", i), "", []byte{0xde, 0xad, 0xde, 0xad}, "BOGUS_RQID", "", MAGIC_STOP_STRING) // [worker identity, "", request id, client identity, "", RPCRequest]
 		if err != nil {
 			log.CRPC_log(log.LOGLEVEL_ERRORS, "Could not send stop message to load balancer, exiting!", err.Error())
 
@@ -94,7 +94,7 @@ func (srv *Server) stop() error {
 }
 
 func (srv *Server) handleIncomingRpc(worker_queue *queue.Queue, request_queue *queue.Queue) {
-	// The message we're receiving here has this format: [client_identity, request_id, "", data].
+	// The message we're receiving here has this format: [request_id, client_identity, "", data].
 	msgs, err := srv.frontend_router.RecvMessageBytes(0)
 
 	if err != nil {
@@ -116,16 +116,16 @@ func (srv *Server) handleIncomingRpc(worker_queue *queue.Queue, request_queue *q
 		}
 
 		srv.sendError(srv.frontend_router, request, proto.RPCResponse_STATUS_LOADSHED,
-			&workerRequest{client_id: msgs[0], request_id: msgs[1], data: msgs[3]})
+			&workerRequest{client_id: msgs[1], request_id: msgs[0], data: msgs[3]})
 
 	} else if worker_id, ok := worker_queue.Pop().([]byte); ok { // Find worker
-		_, err = srv.backend_router.SendMessage(worker_id, "", msgs) // [worker identity, "", client identity, "", RPCRequest]
+		_, err = srv.backend_router.SendMessage(worker_id, "", msgs) // [worker identity, "", request identity, client identity, "", RPCRequest]
 
 		if err != nil {
 			if err.(zmq.Errno) != zmq.EHOSTUNREACH {
 				log.CRPC_log(log.LOGLEVEL_ERRORS, "Error when sending to backend router:", err.Error())
 			} else {
-				log.CRPC_log(log.LOGLEVEL_ERRORS, "Could not route message, identity", fmt.Sprintf("%x", msgs[0]), ", to frontend")
+				log.CRPC_log(log.LOGLEVEL_ERRORS, "Could not route message, identity", fmt.Sprintf("%x", msgs[1]), ", to frontend")
 			}
 		}
 
@@ -148,14 +148,14 @@ func (srv *Server) handleIncomingRpc(worker_queue *queue.Queue, request_queue *q
 		}
 
 		srv.sendError(srv.frontend_router, request, proto.RPCResponse_STATUS_OVERLOADED_RETRY,
-			&workerRequest{client_id: msgs[0], request_id: msgs[1], data: msgs[3]})
+			&workerRequest{client_id: msgs[1], request_id: msgs[0], data: msgs[3]})
 	}
 
 }
 
 // Returns false if the server loop should be stopped
 func (srv *Server) handleWorkerResponse(worker_queue *queue.Queue, request_queue *queue.Queue) bool {
-	msgs, err := srv.backend_router.RecvMessageBytes(0) // [worker identity, "", client identity, request_id, "", RPCResponse]
+	msgs, err := srv.backend_router.RecvMessageBytes(0) // [worker identity, "", request_id, client identity, "", RPCResponse]
 
 	if err != nil {
 		log.CRPC_log(log.LOGLEVEL_ERRORS, "Error when receiving from frontend:", err.Error())
@@ -188,7 +188,7 @@ func (srv *Server) handleWorkerResponse(worker_queue *queue.Queue, request_queue
 
 	} else {
 		worker_queue.Push(backend_identity)
-		_, err := srv.frontend_router.SendMessage(msgs[2:]) // [client identity, request_id, "", RPCResponse]
+		_, err := srv.frontend_router.SendMessage(msgs[2:]) // [request identity, client identity, "", RPCResponse]
 
 		if err != nil {
 			if err.(zmq.Errno) != zmq.EHOSTUNREACH {
@@ -205,7 +205,7 @@ func (srv *Server) handleWorkerResponse(worker_queue *queue.Queue, request_queue
 	if request_queue.Len() > 0 && worker_queue.Len() > 0 {
 		request_message := request_queue.Pop().([][]byte)
 		worker_id := worker_queue.Pop().([]byte)
-		_, err = srv.backend_router.SendMessage(worker_id, "", request_message) // [worker identity, "", client identity, request_id, "", RPCRequest]
+		_, err = srv.backend_router.SendMessage(worker_id, "", request_message) // [worker identity, "", request_id, client id, "", RPCRequest]
 		if err != nil {
 			log.CRPC_log(log.LOGLEVEL_ERRORS, "Error when sending to backend router:", err.Error())
 		}
@@ -306,12 +306,12 @@ func (srv *Server) acceptRequests(sock *zmq.Socket, worker_identity string) erro
 	sock.SendMessage("___BOGUS_CLIENT_ID", "__BOGUS_REQ_ID", "", MAGIC_READY_STRING)
 
 	for {
-		// We're getting here the following message parts: [client_identity, request_id, "", data]
+		// We're getting here the following message parts: [request_id, client identity, "", data]
 		msgs, err := sock.RecvMessageBytes(0)
 
 		if err == nil && len(msgs) == 4 {
 			if log.IsLoggingEnabled(log.LOGLEVEL_DEBUG) {
-				log.CRPC_log(log.LOGLEVEL_DEBUG, fmt.Sprintf("Worker #%s received message from %x", worker_identity, msgs[0]))
+				log.CRPC_log(log.LOGLEVEL_DEBUG, fmt.Sprintf("Worker #%s received message from %x", worker_identity, msgs[1]))
 			}
 
 			if bytes.Equal(msgs[3], MAGIC_STOP_STRING) {
@@ -320,7 +320,7 @@ func (srv *Server) acceptRequests(sock *zmq.Socket, worker_identity string) erro
 				return nil
 			}
 
-			req := workerRequest{client_id: msgs[0], request_id: msgs[1], data: msgs[3]}
+			req := workerRequest{client_id: msgs[1], request_id: msgs[0], data: msgs[3]}
 			srv.handleRequest(&req, sock)
 		} else {
 
@@ -398,7 +398,7 @@ func (srv *Server) handleRequest(request *workerRequest, sock *zmq.Socket) {
 
 	} else {
 
-		_, err := sock.SendMessage(request.client_id, request.request_id, "", response_serialized)
+		_, err := sock.SendMessage(request.request_id, request.client_id, "", response_serialized)
 
 		if err != nil {
 			log.CRPC_log(log.LOGLEVEL_WARNINGS,
@@ -431,5 +431,5 @@ func (srv *Server) sendError(sock *zmq.Socket, rq *proto.RPCRequest, s proto.RPC
 		return // Let the client time out. We can't do anything (although this isn't supposed to happen)
 	}
 
-	sock.SendMessage(request.client_id, request.request_id, "", buf)
+	sock.SendMessage(request.request_id, request.client_id, "", buf)
 }
