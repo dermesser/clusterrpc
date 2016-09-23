@@ -87,7 +87,7 @@ func (r *Request) makeRPCRequestProto() *proto.RPCRequest {
 	rq.Data = r.payload
 	rq.Procedure = &r.endpoint
 	rq.Srvc = &r.service
-	rq.WantTrace = pb.Bool(r.trace != nil || r.ctx != nil)
+	rq.WantTrace = pb.Bool(r.trace != nil || (r.ctx != nil && r.ctx.GetTraceInfo() != nil))
 	rq.RpcId = &r.rpcid
 	if r.params.deadline_propagation {
 		rq.Deadline = pb.Int64((time.Now().UnixNano() + r.params.timeout.Nanoseconds()) / 1000)
