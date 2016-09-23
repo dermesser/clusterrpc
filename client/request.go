@@ -9,12 +9,48 @@ import (
 	pb "github.com/gogo/protobuf/proto"
 )
 
+// Various parameters determining how a request is executed. There are builder methods to set the various parameters.
+type RequestParams struct {
+	accept_redirect      bool
+	retries              uint
+	deadline_propagation bool
+	timeout              time.Duration
+}
+
+func NewParams() *RequestParams {
+	return &RequestParams{accept_redirect: true, retries: 0, deadline_propagation: false, timeout: 10 * time.Second}
+}
+
+// Whether to follow redirects issued by the server. May impact efficiency.
+func (p *RequestParams) AcceptRedirects(b bool) *RequestParams {
+	p.accept_redirect = b
+	return p
+}
+
+// How often a request is to be retried. Default: 0
+func (p *RequestParams) Retries(r uint) *RequestParams {
+	p.retries = r
+	return p
+}
+
+// Whether to enable deadline propagation; that is, tell the server the time beyond which it doesn't need to bother returning a response.
+func (p *RequestParams) DeadlinePropagation(b bool) *RequestParams {
+	p.deadline_propagation = b
+	return p
+}
+
+// Set the timeout; this is used as network timeout and for the deadline propagation, if enabled.
+func (p *RequestParams) Timeout(d time.Duration) *RequestParams {
+	p.timeout = d
+	return p
+}
+
 // An RPC request that can be modified before it is sent.
 type Request struct {
 	client            *Client
 	service, endpoint string
 
-	params ClientParams
+	params RequestParams
 	ctx    *server.Context
 	trace  *proto.TraceInfo
 
@@ -25,7 +61,7 @@ type Request struct {
 	payload []byte
 }
 
-func (r *Request) SetParameters(p *ClientParams) *Request {
+func (r *Request) SetParameters(p *RequestParams) *Request {
 	r.params = *p
 	return r
 }

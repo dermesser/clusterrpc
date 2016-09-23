@@ -8,42 +8,6 @@ import (
 	pb "github.com/gogo/protobuf/proto"
 )
 
-// Various parameters determining how a request is executed. There are builder methods to set the various parameters.
-type ClientParams struct {
-	accept_redirect      bool
-	retries              uint
-	deadline_propagation bool
-	timeout              time.Duration
-}
-
-func NewParams() *ClientParams {
-	return &ClientParams{accept_redirect: true, retries: 0, deadline_propagation: false, timeout: 10 * time.Second}
-}
-
-// Whether to follow redirects issued by the server. May impact efficiency.
-func (p *ClientParams) AcceptRedirects(b bool) *ClientParams {
-	p.accept_redirect = b
-	return p
-}
-
-// How often a request is to be retried. Default: 0
-func (p *ClientParams) Retries(r uint) *ClientParams {
-	p.retries = r
-	return p
-}
-
-// Whether to enable deadline propagation; that is, tell the server the time beyond which it doesn't need to bother returning a response.
-func (p *ClientParams) DeadlinePropagation(b bool) *ClientParams {
-	p.deadline_propagation = b
-	return p
-}
-
-// Set the timeout; this is used as network timeout and for the deadline propagation, if enabled.
-func (p *ClientParams) Timeout(d time.Duration) *ClientParams {
-	p.timeout = d
-	return p
-}
-
 // A (new) client object. It contains a channel
 type Client struct {
 	channel RpcChannel
@@ -53,7 +17,7 @@ type Client struct {
 	// To prevent hassle with the REQ state machine, we implement a similar one ourselves; as long as request_active == true, no new requests can be created
 	request_active bool
 
-	default_params ClientParams
+	default_params RequestParams
 
 	last_sent time.Time
 	rpclogger *golog.Logger
