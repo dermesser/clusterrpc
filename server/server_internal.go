@@ -20,7 +20,7 @@ var MAGIC_STOP_STRING []byte = []byte("___STOPBALANCER___")
 const OUTSTANDING_REQUESTS_PER_THREAD uint = 50
 
 type workerRequest struct {
-	request_id, client_id, data []byte
+	requestId, clientId, data []byte
 }
 
 /*
@@ -34,7 +34,8 @@ func (srv *Server) stop() error {
 	// First stop all worker threads
 	for i := uint(0); i < srv.workers; i++ {
 		_, err := srv.backend_router.SendMessage(
-			fmt.Sprintf("%d", i), "", []byte{0xde, 0xad, 0xde, 0xad}, "BOGUS_RQID", "", MAGIC_STOP_STRING) // [worker identity, "", request id, client identity, "", RPCRequest]
+			newBackendMessage([]byte(fmt.Sprintf("%d", i)),
+				newClientMessage([]byte("BOGUS_RQID"), []byte{0xde, 0xad, 0xde, 0xad}, MAGIC_STOP_STRING)).serializeBackendMessage())
 		if err != nil {
 			log.CRPC_log(log.LOGLEVEL_ERRORS, "Could not send stop message to load balancer, exiting!", err.Error())
 
@@ -69,7 +70,7 @@ func (srv *Server) stop() error {
 		return err
 	}
 
-	_, err = sock.SendMessage("___BOGUS_CLIENT_ID", "__BOGUS_REQ_ID", "", MAGIC_STOP_STRING)
+	_, err = sock.SendMessage(newClientMessage([]byte("__BOGUS_REQ_ID"), []byte("___BOGUS_clientId"), MAGIC_STOP_STRING).serializeClientMessage())
 
 	if err != nil {
 		log.CRPC_log(log.LOGLEVEL_ERRORS, "Could not send stop message to load balancer, exiting!", err.Error())
@@ -94,21 +95,19 @@ func (srv *Server) stop() error {
 }
 
 func (srv *Server) handleIncomingRpc(worker_queue *queue.Queue, request_queue *queue.Queue) {
-	// The message we're receiving here has this format: [request_id, client_identity, "", data].
+	// The message we're receiving here has this format: [requestId, clientIdentity, "", data].
 	msgs, err := srv.frontend_router.RecvMessageBytes(0)
 
 	if err != nil {
 		log.CRPC_log(log.LOGLEVEL_ERRORS, "Error when receiving from frontend:", err.Error())
 		return
 	}
-	if len(msgs) != 4 {
-		log.CRPC_log(log.LOGLEVEL_ERRORS, "Error: Skipping message with other than 4 frames from frontend router;", len(msgs), "frames received")
-		return
-	}
+
+	message := parseClientMessage(msgs)
 
 	if srv.loadshed_state { // Refuse request.
 		request := &proto.RPCRequest{}
-		err = request.Unmarshal(msgs[3])
+		err = request.Unmarshal(message.payload)
 
 		if err != nil {
 			log.CRPC_log(log.LOGLEVEL_WARNINGS, "Dropped message; could not decode protobuf:", err.Error())
@@ -116,21 +115,21 @@ func (srv *Server) handleIncomingRpc(worker_queue *queue.Queue, request_queue *q
 		}
 
 		srv.sendError(srv.frontend_router, request, proto.RPCResponse_STATUS_LOADSHED,
-			&workerRequest{client_id: msgs[1], request_id: msgs[0], data: msgs[3]})
+			&workerRequest{clientId: message.clientId, requestId: message.requestId, data: message.payload})
 
 	} else if worker_id, ok := worker_queue.Pop().([]byte); ok { // Find worker
-		_, err = srv.backend_router.SendMessage(worker_id, "", msgs) // [worker identity, "", request identity, client identity, "", RPCRequest]
+		_, err = srv.backend_router.SendMessage(newBackendMessage(worker_id, message).serializeBackendMessage()) // [worker identity, "", request identity, client identity, "", RPCRequest]
 
 		if err != nil {
 			if err.(zmq.Errno) != zmq.EHOSTUNREACH {
 				log.CRPC_log(log.LOGLEVEL_ERRORS, "Error when sending to backend router:", err.Error())
 			} else {
-				log.CRPC_log(log.LOGLEVEL_ERRORS, "Could not route message, identity", fmt.Sprintf("%x", msgs[1]), ", to frontend")
+				log.CRPC_log(log.LOGLEVEL_ERRORS, "Could not route message, identity", fmt.Sprintf("%x", message.clientId), ", to frontend")
 			}
 		}
 
 	} else if uint(request_queue.Len()) < srv.workers*OUTSTANDING_REQUESTS_PER_THREAD { // We're only allowing so many queued requests to prevent from complete overloading
-		request_queue.Push(msgs)
+		request_queue.Push(message)
 
 		if request_queue.Len() > int(0.8*float64(srv.workers*OUTSTANDING_REQUESTS_PER_THREAD)) {
 			log.CRPC_log(log.LOGLEVEL_WARNINGS, "Queue is now at more than 80% fullness. Consider increasing # of workers: (qlen/cap)",
@@ -140,7 +139,7 @@ func (srv *Server) handleIncomingRpc(worker_queue *queue.Queue, request_queue *q
 	} else {
 		// Maybe just drop silently -- this costs CPU!
 		request := &proto.RPCRequest{}
-		err = request.Unmarshal(msgs[3])
+		err = request.Unmarshal(message.payload)
 
 		if err != nil {
 			log.CRPC_log(log.LOGLEVEL_WARNINGS, "Dropped message; no available workers, queue full")
@@ -148,38 +147,34 @@ func (srv *Server) handleIncomingRpc(worker_queue *queue.Queue, request_queue *q
 		}
 
 		srv.sendError(srv.frontend_router, request, proto.RPCResponse_STATUS_OVERLOADED_RETRY,
-			&workerRequest{client_id: msgs[1], request_id: msgs[0], data: msgs[3]})
+			&workerRequest{clientId: message.clientId, requestId: message.requestId, data: message.payload})
 	}
 
 }
 
 // Returns false if the server loop should be stopped
 func (srv *Server) handleWorkerResponse(worker_queue *queue.Queue, request_queue *queue.Queue) bool {
-	msgs, err := srv.backend_router.RecvMessageBytes(0) // [worker identity, "", request_id, client identity, "", RPCResponse]
+	msgs, err := srv.backend_router.RecvMessageBytes(0) // [worker identity, "", requestId, client identity, "", RPCResponse]
 
 	if err != nil {
 		log.CRPC_log(log.LOGLEVEL_ERRORS, "Error when receiving from frontend:", err.Error())
 		return true
 	}
-	if len(msgs) != 6 {
-		log.CRPC_log(log.LOGLEVEL_ERRORS, "Error: Skipping message with other than 5 frames from backend;", len(msgs), "frames received")
-		return true
-	}
 
-	backend_identity := msgs[0]
+	message := parseBackendMessage(msgs)
 
 	// the data frame is MAGIC_READY_STRING when a worker joins, and MAGIC_STOP_STRING
 	// if the app asks to stop
-	if bytes.Equal(msgs[5], MAGIC_READY_STRING) {
+	if bytes.Equal(message.message.payload, MAGIC_READY_STRING) {
 
-		worker_queue.Push(backend_identity)
+		worker_queue.Push(message.workerId)
 
-	} else if bytes.Equal(msgs[5], MAGIC_STOP_STRING) {
+	} else if bytes.Equal(message.message.payload, MAGIC_STOP_STRING) {
 
 		log.CRPC_log(log.LOGLEVEL_INFO, "Stopped balancer...")
 
 		// Send ack
-		_, err = srv.backend_router.SendMessage(backend_identity, "", "DONE")
+		_, err = srv.backend_router.SendMessage(message.workerId, "", "DONE")
 
 		if err != nil {
 			log.CRPC_log(log.LOGLEVEL_ERRORS, "Couldn't send response to STOP message:", err.Error())
@@ -187,8 +182,8 @@ func (srv *Server) handleWorkerResponse(worker_queue *queue.Queue, request_queue
 		return false
 
 	} else {
-		worker_queue.Push(backend_identity)
-		_, err := srv.frontend_router.SendMessage(msgs[2:]) // [request identity, client identity, "", RPCResponse]
+		worker_queue.Push(message.workerId)
+		_, err := srv.frontend_router.SendMessage(message.message.serializeClientMessage()) // [request identity, client identity, "", RPCResponse]
 
 		if err != nil {
 			if err.(zmq.Errno) != zmq.EHOSTUNREACH {
@@ -196,16 +191,16 @@ func (srv *Server) handleWorkerResponse(worker_queue *queue.Queue, request_queue
 			} else if err.(zmq.Errno) == zmq.EHOSTUNREACH {
 				// routing is mandatory.
 				// Fails when the client has already disconnected
-				log.CRPC_log(log.LOGLEVEL_WARNINGS, "Could not route message, worker identity", fmt.Sprintf("%x", msgs[0]), "to frontend")
+				log.CRPC_log(log.LOGLEVEL_WARNINGS, "Could not route message, worker identity", fmt.Sprintf("%x", message.workerId), "to frontend")
 			}
 		}
 	}
 
 	// Now that we have a new free worker, let's see if there's work in the queue...
 	if request_queue.Len() > 0 && worker_queue.Len() > 0 {
-		request_message := request_queue.Pop().([][]byte)
+		request_message := request_queue.Pop().(clientMessage)
 		worker_id := worker_queue.Pop().([]byte)
-		_, err = srv.backend_router.SendMessage(worker_id, "", request_message) // [worker identity, "", request_id, client id, "", RPCRequest]
+		_, err := srv.backend_router.SendMessage(newBackendMessage(worker_id, request_message).serializeBackendMessage())
 		if err != nil {
 			log.CRPC_log(log.LOGLEVEL_ERRORS, "Error when sending to backend router:", err.Error())
 		}
@@ -303,31 +298,30 @@ func (srv *Server) thread(n uint, spawn bool) error {
 func (srv *Server) acceptRequests(sock *zmq.Socket, worker_identity string) error {
 
 	// Send bogus parts so we have the correct number of frames in this message. (doesn't impact performance)
-	sock.SendMessage("___BOGUS_CLIENT_ID", "__BOGUS_REQ_ID", "", MAGIC_READY_STRING)
+	sock.SendMessage(newClientMessage([]byte("__BOGUS_REQ_ID"), []byte("___BOGUS_clientId"), MAGIC_READY_STRING).serializeClientMessage())
 
 	for {
-		// We're getting here the following message parts: [request_id, client identity, "", data]
+		// We're getting here the following message parts: [requestId, client identity, "", data]
 		msgs, err := sock.RecvMessageBytes(0)
 
-		if err == nil && len(msgs) == 4 {
+		if err == nil {
+			message := parseClientMessage(msgs)
+
 			if log.IsLoggingEnabled(log.LOGLEVEL_DEBUG) {
-				log.CRPC_log(log.LOGLEVEL_DEBUG, fmt.Sprintf("Worker #%s received message from %x", worker_identity, msgs[1]))
+				log.CRPC_log(log.LOGLEVEL_DEBUG, fmt.Sprintf("Worker #%s received message from %x", worker_identity, message.clientId))
 			}
 
-			if bytes.Equal(msgs[3], MAGIC_STOP_STRING) {
+			if bytes.Equal(message.payload, MAGIC_STOP_STRING) {
 				log.CRPC_log(log.LOGLEVEL_DEBUG, fmt.Sprintf("Worker #%s stopped", worker_identity))
 
 				return nil
 			}
 
-			req := workerRequest{client_id: msgs[1], request_id: msgs[0], data: msgs[3]}
+			req := workerRequest{clientId: message.clientId, requestId: message.requestId, data: message.payload}
 			srv.handleRequest(&req, sock)
 		} else {
-
 			if err != nil {
 				log.CRPC_log(log.LOGLEVEL_WARNINGS, "Skipped incoming message, error:", err.Error())
-			} else if len(msgs) != 4 {
-				log.CRPC_log(log.LOGLEVEL_WARNINGS, "Frontend router sent message with != 4 frames")
 			}
 			continue
 		}
@@ -337,14 +331,14 @@ func (srv *Server) acceptRequests(sock *zmq.Socket, worker_identity string) erro
 }
 
 // Handle one request.
-// client_identity is the unique number assigned by ZeroMQ. data is the raw data input from the client.
+// clientIdentity is the unique number assigned by ZeroMQ. data is the raw data input from the client.
 func (srv *Server) handleRequest(request *workerRequest, sock *zmq.Socket) {
 
 	rqproto := new(proto.RPCRequest)
 	pberr := pb.Unmarshal(request.data, rqproto)
 
 	if pberr != nil {
-		log.CRPC_log(log.LOGLEVEL_ERRORS, fmt.Sprintf("[%x/_/_] PB unmarshaling error: %s", request.client_id, pberr.Error()))
+		log.CRPC_log(log.LOGLEVEL_ERRORS, fmt.Sprintf("[%x/_/_] PB unmarshaling error: %s", request.clientId, pberr.Error()))
 		srv.sendError(sock, rqproto, proto.RPCResponse_STATUS_SERVER_ERROR, request)
 		return
 	}
@@ -356,7 +350,7 @@ func (srv *Server) handleRequest(request *workerRequest, sock *zmq.Socket) {
 		delta := time.Now().Unix() - rqproto.GetDeadline()
 
 		log.CRPC_log(log.LOGLEVEL_WARNINGS, fmt.Sprintf("[%x/%s/%s] Timeout occurred, deadline was %d (%d s)",
-			request.client_id, caller_id, rqproto.GetRpcId(), rqproto.GetDeadline(), delta))
+			request.clientId, caller_id, rqproto.GetRpcId(), rqproto.GetDeadline(), delta))
 
 		// Sending this to get the REQ socket in the right state
 		srv.sendError(sock, rqproto, proto.RPCResponse_STATUS_MISSED_DEADLINE, request)
@@ -368,7 +362,7 @@ func (srv *Server) handleRequest(request *workerRequest, sock *zmq.Socket) {
 	if handler == nil {
 		log.CRPC_log(log.LOGLEVEL_WARNINGS,
 			fmt.Sprintf("[%x/%s/%s] NOT_FOUND response to request for endpoint %s",
-				request.client_id, caller_id, rqproto.GetRpcId(), rqproto.GetSrvc()+"."+rqproto.GetProcedure()))
+				request.clientId, caller_id, rqproto.GetRpcId(), rqproto.GetSrvc()+"."+rqproto.GetProcedure()))
 		srv.sendError(sock, rqproto, proto.RPCResponse_STATUS_NOT_FOUND, request)
 		return
 	}
@@ -376,7 +370,7 @@ func (srv *Server) handleRequest(request *workerRequest, sock *zmq.Socket) {
 	if log.IsLoggingEnabled(log.LOGLEVEL_DEBUG) {
 		log.CRPC_log(log.LOGLEVEL_DEBUG,
 			fmt.Sprintf("[%x/%s/%s] Calling endpoint %s.%s...",
-				request.client_id, caller_id, rqproto.GetRpcId(), rqproto.GetSrvc(), rqproto.GetProcedure()))
+				request.clientId, caller_id, rqproto.GetRpcId(), rqproto.GetSrvc(), rqproto.GetProcedure()))
 	}
 
 	cx := srv.newContext(rqproto, srv.rpclogger)
@@ -394,22 +388,22 @@ func (srv *Server) handleRequest(request *workerRequest, sock *zmq.Socket) {
 
 		log.CRPC_log(log.LOGLEVEL_ERRORS,
 			fmt.Sprintf("[%x/%s/%s] Error when serializing RPCResponse: %s",
-				request.client_id, caller_id, rqproto.GetRpcId(), pberr.Error()))
+				request.clientId, caller_id, rqproto.GetRpcId(), pberr.Error()))
 
 	} else {
 
-		_, err := sock.SendMessage(request.request_id, request.client_id, "", response_serialized)
+		_, err := sock.SendMessage(newClientMessage(request.requestId, request.clientId, response_serialized).serializeClientMessage())
 
 		if err != nil {
 			log.CRPC_log(log.LOGLEVEL_WARNINGS,
 				fmt.Sprintf("[%x/%s/%s] Error when sending response; %s",
-					request.client_id, caller_id, rqproto.GetRpcId(), err.Error()))
+					request.clientId, caller_id, rqproto.GetRpcId(), err.Error()))
 
 			return
 		}
 
 		if log.IsLoggingEnabled(log.LOGLEVEL_DEBUG) {
-			log.CRPC_log(log.LOGLEVEL_DEBUG, fmt.Sprintf("[%x/%s/%s] Sent response.", request.client_id, caller_id, rqproto.GetRpcId()))
+			log.CRPC_log(log.LOGLEVEL_DEBUG, fmt.Sprintf("[%x/%s/%s] Sent response.", request.clientId, caller_id, rqproto.GetRpcId()))
 		}
 
 	}
@@ -431,5 +425,5 @@ func (srv *Server) sendError(sock *zmq.Socket, rq *proto.RPCRequest, s proto.RPC
 		return // Let the client time out. We can't do anything (although this isn't supposed to happen)
 	}
 
-	sock.SendMessage(request.request_id, request.client_id, "", buf)
+	sock.SendMessage(newClientMessage(request.requestId, request.clientId, buf).serializeClientMessage())
 }
