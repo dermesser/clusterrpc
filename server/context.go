@@ -85,6 +85,13 @@ func (c *Context) GetArgument(msg pb.Message) error {
 }
 
 /*
+GetClientId returns the identification that the client sent.
+*/
+func (c *Context) GetClientId() string {
+	return c.orig_rq.GetCallerId()
+}
+
+/*
 Get the absolute deadline requested by the caller.
 */
 func (c *Context) GetDeadline() time.Time {
