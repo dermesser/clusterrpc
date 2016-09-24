@@ -6,12 +6,13 @@ import (
 	"github.com/pebbe/zmq4"
 )
 
+// ClientSecurityManager manages encryption for client sockets.
 type ClientSecurityManager struct {
 	*keyWriteLoader
-	server_public string
+	serverPublic string
 }
 
-// Sets up the manager and generates a new client key pair.
+// NewClientSecurityManager sets up the manager and generates a new client key pair.
 // The server public key is not yet loaded!
 func NewClientSecurityManager() *ClientSecurityManager {
 	mgr := &ClientSecurityManager{}
@@ -27,14 +28,14 @@ func NewClientSecurityManager() *ClientSecurityManager {
 	return mgr
 }
 
-// Sets up a client socket for CURVE security. If called on nil, does nothing.
+// ApplyToClientSocket sets up a client socket for CURVE security. If called on nil, does nothing.
 // This function must be called before calling Connect() on the socket!
 func (mgr *ClientSecurityManager) ApplyToClientSocket(sock *zmq4.Socket) error {
 	if mgr == nil {
 		return nil
 	}
 
-	if mgr.server_public == "" || mgr.public == "" || mgr.private == "" {
+	if mgr.serverPublic == "" || mgr.public == "" || mgr.private == "" {
 		return errors.New("Not all three keys (server's public, client public, client private) are set")
 	}
 
@@ -46,7 +47,7 @@ func (mgr *ClientSecurityManager) ApplyToClientSocket(sock *zmq4.Socket) error {
 		return err
 	}
 
-	err = sock.ClientAuthCurve(mgr.server_public, mgr.public, mgr.private)
+	err = sock.ClientAuthCurve(mgr.serverPublic, mgr.public, mgr.private)
 
 	if err != nil {
 		return err
@@ -55,12 +56,12 @@ func (mgr *ClientSecurityManager) ApplyToClientSocket(sock *zmq4.Socket) error {
 	return nil
 }
 
-// Set the public key of the server.
+// SetServerPubkey sets the public key of the server.
 func (mgr *ClientSecurityManager) SetServerPubkey(key string) {
-	mgr.server_public = key
+	mgr.serverPublic = key
 }
 
-// Load the public key of the server from the specified file.
+// LoadServerPubkey loads the public key of the server from the specified file.
 func (mgr *ClientSecurityManager) LoadServerPubkey(keyfile string) error {
 	kwl := new(keyWriteLoader)
 
@@ -70,12 +71,12 @@ func (mgr *ClientSecurityManager) LoadServerPubkey(keyfile string) error {
 		return err
 	}
 
-	mgr.server_public = kwl.public
+	mgr.serverPublic = kwl.public
 
 	return nil
 }
 
-// Set the client key pair to the specified keys.
+// SetKeys sets the client key pair to the specified keys.
 func (mgr *ClientSecurityManager) SetKeys(public, private string) {
 	mgr.public, mgr.private = public, private
 }

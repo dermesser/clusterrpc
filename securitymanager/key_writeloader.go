@@ -15,20 +15,20 @@ type keyWriteLoader struct {
 // Loads private and public key from the specified files.
 // Does not initialize a key when the file name is server.DONOTREAD (for example
 // when you only want to read the private key from disk -- use SetKeys() with an empty
-// private key and then LoadKeys() with public_file as DONOTREAD, leaving the public key untouched)
-func (mgr *keyWriteLoader) LoadKeys(public_file, private_file string) error {
-	if public_file != DONOTREAD {
+// private key and then LoadKeys() with publicFile as DONOTREAD, leaving the public key untouched)
+func (mgr *keyWriteLoader) LoadKeys(publicFile, privateFile string) error {
+	if publicFile != DONOTREAD {
 		var err error
-		mgr.public, err = read_file(public_file)
+		mgr.public, err = readFile(publicFile)
 
 		if err != nil {
 			return err
 		}
 	}
 
-	if private_file != DONOTREAD {
+	if privateFile != DONOTREAD {
 		var err error
-		mgr.private, err = read_file(private_file)
+		mgr.private, err = readFile(privateFile)
 
 		if err != nil {
 			return err
@@ -37,7 +37,7 @@ func (mgr *keyWriteLoader) LoadKeys(public_file, private_file string) error {
 	return nil
 }
 
-func read_file(filename string) (string, error) {
+func readFile(filename string) (string, error) {
 	file, err := os.Open(filename)
 	defer file.Close()
 
@@ -62,18 +62,18 @@ func read_file(filename string) (string, error) {
 // Writes a keypair to the supplied files.
 // If one of the file names is the constant DONOTWRITE, the function will not write to that file.
 // e.g. mgr.WriteKeys("pubkey.txt", server.DONOTWRITE) writes only the public key.
-func (mgr *keyWriteLoader) WriteKeys(public_file, private_file string) error {
+func (mgr *keyWriteLoader) WriteKeys(publicFile, privateFile string) error {
 
-	if public_file != DONOTWRITE {
-		err := write_file(public_file, mgr.public)
+	if publicFile != DONOTWRITE {
+		err := writeFile(publicFile, mgr.public)
 
 		if err != nil {
 			return err
 		}
 	}
 
-	if private_file != DONOTWRITE {
-		err := write_file(private_file, mgr.private)
+	if privateFile != DONOTWRITE {
+		err := writeFile(privateFile, mgr.private)
 
 		if err != nil {
 			return err
@@ -82,7 +82,7 @@ func (mgr *keyWriteLoader) WriteKeys(public_file, private_file string) error {
 	return nil
 }
 
-func write_file(filename, content string) error {
+func writeFile(filename, content string) error {
 	file, err := os.OpenFile(filename, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
 	defer file.Close()
 
