@@ -21,13 +21,13 @@ func parseClientMessage(msg [][]byte) clientMessage {
 		log.Panic("clientMessage message has != 4 frames!", len(msg))
 	}
 
-	return clientMessage{requestId: msg[0], clientId: msg[1], payload: msg[3]}
+	return clientMessage{requestId: msg[1], clientId: msg[0], payload: msg[3]}
 }
 
 func (msg clientMessage) serializeClientMessage() [][]byte {
 	frames := make([][]byte, 4)
-	frames[0] = msg.requestId
-	frames[1] = msg.clientId
+	frames[0] = msg.clientId
+	frames[1] = msg.requestId
 	frames[2] = []byte{}
 	frames[3] = msg.payload
 	return frames
