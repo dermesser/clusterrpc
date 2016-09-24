@@ -327,7 +327,6 @@ func (srv *Server) acceptRequests(sock *zmq.Socket, worker_identity string) erro
 		}
 
 	}
-	return nil
 }
 
 // Handle one request.
