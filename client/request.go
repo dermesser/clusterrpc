@@ -107,8 +107,9 @@ func (r *Request) GoProto(msg pb.Message) Response {
 // Send a request.
 func (r *Request) Go(payload []byte) Response {
 	r.rpcid = log.GetLogToken()
-
 	r.payload = payload
+
+	r.client.request_active = true
 	rp := r.callNextFilter(0)
 	r.client.request_active = false
 	return rp

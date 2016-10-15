@@ -55,7 +55,6 @@ func (client *Client) NewRequest(service, endpoint string) *Request {
 	if client.request_active {
 		return nil
 	}
-	client.request_active = true
 	return &Request{client: client, params: client.default_params, service: service, endpoint: endpoint}
 }
 
