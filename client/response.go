@@ -22,8 +22,8 @@ func (rp *Response) Payload() []byte {
 }
 
 // Unmarshals the response into msg
-func (rp *Response) GetResponseMessage(msg *pb.Message) error {
-	return pb.Unmarshal(rp.response.GetResponseData(), *msg)
+func (rp *Response) GetResponseMessage(msg pb.Message) error {
+	return pb.Unmarshal(rp.response.GetResponseData(), msg)
 }
 
 // Get the error that has occurred.

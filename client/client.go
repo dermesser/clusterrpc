@@ -88,6 +88,6 @@ func (cl *Client) RequestProtobuf(request, reply pb.Message, service, endpoint s
 	if !rp.Ok() {
 		return &rp
 	}
-	rp.GetResponseMessage(&reply)
+	rp.GetResponseMessage(reply)
 	return nil
 }
