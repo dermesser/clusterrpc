@@ -47,13 +47,7 @@ func (cc *ConnectionCache) Connect(peer PeerAddress,
 		cc.cache[peer.String()] = list.New()
 	}
 
-	ch, err := NewRpcChannel(security_manager)
-
-	if err != nil {
-		return nil, err
-	}
-
-	err = ch.Connect(peer)
+	ch, err := NewChannelAndConnect(peer, security_manager)
 
 	if err != nil {
 		return nil, err

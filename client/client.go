@@ -17,7 +17,7 @@ type Client struct {
 	// To prevent hassle with the REQ state machine, we implement a similar one ourselves; as long as request_active == true, no new requests can be created
 	request_active bool
 
-	default_params RequestParams
+	defaultParams RequestParams
 
 	last_sent time.Time
 	rpclogger *golog.Logger
@@ -25,10 +25,15 @@ type Client struct {
 	filters []ClientFilter
 }
 
+// NewClient is deprecated; use New()
+func NewClient(name string, channel *RpcChannel) Client {
+	return New(name, channel)
+}
+
 // Creates a new client from the channel.
 // Don't share a channel among two concurrently active clients.
-func NewClient(name string, channel *RpcChannel) Client {
-	return Client{name: name, channel: *channel, active: true, default_params: *NewParams(), filters: default_filters}
+func New(name string, channel *RpcChannel) Client {
+	return Client{name: name, channel: *channel, active: true, defaultParams: *NewParams(), filters: default_filters}
 }
 
 // Set socket timeout (default 10s) and whether to propagate this timeout through the call tree.
@@ -37,8 +42,8 @@ func (client *Client) SetTimeout(d time.Duration, propagate bool) {
 		return
 	}
 
-	client.default_params.timeout = d
-	client.default_params.deadline_propagation = propagate
+	client.defaultParams.timeout = d
+	client.defaultParams.deadline_propagation = propagate
 	client.channel.SetTimeout(d)
 }
 
@@ -55,7 +60,7 @@ func (client *Client) NewRequest(service, endpoint string) *Request {
 	if client.request_active {
 		return nil
 	}
-	return &Request{client: client, params: client.default_params, service: service, endpoint: endpoint}
+	return &Request{client: client, params: client.defaultParams, service: service, endpoint: endpoint}
 }
 
 // Sends a request to the server, asking whether it accepts requests and testing general connectivity.
@@ -70,8 +75,7 @@ func (client *Client) IsHealthyWithin(d time.Duration) bool {
 	return rp.Ok()
 }
 
-// Legacy API -- deprecated!
-
+// Legacy API
 func (cl *Client) Request(data []byte, service, endpoint string, trace_dest *proto.TraceInfo) ([]byte, error) {
 	rp := cl.NewRequest(service, endpoint).SetTrace(trace_dest).Go(data)
 

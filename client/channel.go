@@ -101,6 +101,17 @@ func NewRpcChannel(security_manager *smgr.ClientSecurityManager) (*RpcChannel, e
 	return &channel, nil
 }
 
+// NewChannelAndConnect creates a new channel and connects it to `addr`.
+func NewChannelAndConnect(addr PeerAddress, security_manager *smgr.ClientSecurityManager) (*RpcChannel, error) {
+	channel, err := NewRpcChannel(security_manager)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return channel, channel.Connect(addr)
+}
+
 // Connect channel to adr.
 // (This adds the server to the set of connections of this channel; connections are used in a round-robin fashion)
 func (c *RpcChannel) Connect(addr PeerAddress) error {
