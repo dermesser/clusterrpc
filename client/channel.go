@@ -9,7 +9,7 @@ import (
 	zmq "github.com/pebbe/zmq4"
 )
 
-// A TCP/IP address
+// A TCP/IP or Unix socket address
 type PeerAddress struct {
 	host string
 	port uint
@@ -22,6 +22,7 @@ func Peer(host string, port uint) PeerAddress {
 	return PeerAddress{host: host, port: port}
 }
 
+// Construct a peer address for a unix socket peer.
 func IPCPeer(path string) PeerAddress {
 	return PeerAddress{path: path}
 }
@@ -38,9 +39,9 @@ func (pa *PeerAddress) ToUrl() string {
 
 func (pa *PeerAddress) toDebugStr() string {
 	if pa.host != "" {
-		return fmt.Sprintf("%s:%d", pa.host, pa.port)
+		return fmt.Sprintf("tcp:%s:%d", pa.host, pa.port)
 	} else if pa.path != "" {
-		return fmt.Sprintf("%s", pa.path)
+		return fmt.Sprintf("unix:%s", pa.path)
 	} else {
 		return ""
 	}
@@ -58,7 +59,8 @@ func (pa *PeerAddress) equals(pa2 PeerAddress) bool {
 }
 
 // A channel to an RPC server. It is threadsafe, but should not be shared among multiple clients.
-// TODO(lbo): Think about implementing a channel on top of DEALER, with a background goroutine delivering results to waiting requests.
+// TODO(lbo): Think about implementing a channel on top of DEALER, with a
+// background goroutine delivering results to waiting requests.
 type RpcChannel struct {
 	channel *zmq.Socket
 
@@ -151,6 +153,7 @@ func (c *RpcChannel) Reconnect() {
 	}
 }
 
+// Set send/receive timeout on this channel.
 func (c *RpcChannel) SetTimeout(d time.Duration) {
 	c.channel.SetSndtimeo(d)
 	c.channel.SetRcvtimeo(d)

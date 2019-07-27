@@ -372,7 +372,6 @@ func initializeSecurity(is_server bool) {
 }
 
 func main() {
-
 	var srv, cl, acl, srvbench, secure bool
 	var clbench int
 
