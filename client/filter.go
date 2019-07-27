@@ -76,7 +76,7 @@ func RetryFilter(rq *Request, next int) Response {
 }
 
 func DebugFilter(rq *Request, next int) Response {
-	// Prevent all the logging calls if we're note interested
+	// Prevent all the logging calls if we're not interested
 	if log.IsLoggingEnabled(log.LOGLEVEL_INFO) {
 		log.CRPC_log(log.LOGLEVEL_INFO, "Sending RPC attempt #", rq.attempt_count, rq.rpcid, "to", rq.service, ".", rq.endpoint, "@", rq.client.channel.peers)
 		log.CRPC_log(log.LOGLEVEL_DEBUG, "Contents of", rq.rpcid, ":", string(rq.payload))

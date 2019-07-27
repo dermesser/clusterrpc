@@ -2,7 +2,6 @@ package log
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"math/rand"
 	"os"
@@ -35,11 +34,6 @@ const logger_flags = log.LstdFlags | log.Lmicroseconds
 
 var loglevel_strings []string = []string{"[NON]", "[ERR]", "[WRN]", "[INF]", "[DBG]"}
 
-// Set the global RPC logging device
-func SetLoggingDevice(out io.Writer) {
-	logger = log.New(out, "clusterrpc ", logger_flags)
-}
-
 func loglevel_to_string(loglevel int) string {
 	return loglevel_strings[loglevel]
 }
@@ -60,12 +54,24 @@ func CRPC_log(ll int, what ...interface{}) {
 	}
 }
 
+func mapToChar(i int) byte {
+	i = i % (10 + 26 + 26)
+	if i < 10 {
+		return byte('0' + i)
+	} else if i < 10+26 {
+		return byte('A' + i - 10)
+	} else if i < 10+26+26 {
+		return byte('a' + i - 10 - 26)
+	}
+	return byte('_')
+}
+
 // Returns a short random alphanumeric string.
 // This is used to assign special tokens to RPCs in order to track them across log lines.
 func GetLogToken() string {
 	str := make([]byte, 6)
 	for i := range str {
-		str[i] = byte(65 + (rand.Int() % 26))
+		str[i] = mapToChar(rand.Int())
 	}
 	return string(str)
 }

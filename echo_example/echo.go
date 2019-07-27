@@ -205,10 +205,22 @@ func Client() {
 	trace := new(proto.TraceInfo)
 	rp := cl.NewRequest("EchoService", "Echo").SetTrace(trace).Go([]byte("helloworld_fromnew"))
 
+	wait := make(chan bool, 1)
+	go func() {
+		rp2 := cl.NewRequest("EchoService", "Echo").Go([]byte("helloworld_fromnew_2"))
+		if !rp2.Ok() {
+			panic(rp2.Error())
+		}
+		fmt.Println("Received concurrent response:", string(rp2.Payload()))
+		wait <- true
+	}()
+
 	if !rp.Ok() {
 		panic(rp.Error())
 	}
 	fmt.Println("Received response (new):", string(rp.Payload()))
+
+	<-wait
 
 	// Times out on first try...
 	rp = cl.NewRequest("EchoService", "Error").SetParameters(client.NewParams().Timeout(2 * time.Second).Retries(2)).Go([]byte("helloworld_fromnew_to"))

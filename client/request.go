@@ -4,6 +4,7 @@ import (
 	"clusterrpc/log"
 	"clusterrpc/proto"
 	"clusterrpc/server"
+	"errors"
 	"time"
 
 	pb "github.com/gogo/protobuf/proto"
@@ -109,8 +110,16 @@ func (r *Request) Go(payload []byte) Response {
 	r.rpcid = log.GetLogToken()
 	r.payload = payload
 
-	r.client.request_active = true
-	rp := r.callNextFilter(0)
-	r.client.request_active = false
-	return rp
+	before := time.Now()
+	timer := time.NewTimer(r.params.timeout)
+	defer timer.Stop()
+	select {
+	case <-r.client.request_active:
+		r.params.timeout = r.params.timeout - time.Now().Sub(before)
+		rp := r.callNextFilter(0)
+		r.client.request_active <- true
+		return rp
+	case <-timer.C:
+		return Response{err: errors.New("deadline expired on client")}
+	}
 }

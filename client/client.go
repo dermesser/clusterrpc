@@ -14,8 +14,9 @@ type Client struct {
 	name    string
 
 	active bool
-	// To prevent hassle with the REQ state machine, we implement a similar one ourselves; as long as request_active == true, no new requests can be created
-	request_active bool
+	// To prevent hassle with the REQ state machine, we implement a similar one ourselves; as long as request_active == true,
+	// no new requests can be created
+	request_active chan bool
 
 	defaultParams RequestParams
 
@@ -33,7 +34,9 @@ func NewClient(name string, channel *RpcChannel) Client {
 // Creates a new client from the channel.
 // Don't share a channel among two concurrently active clients.
 func New(name string, channel *RpcChannel) Client {
-	return Client{name: name, channel: *channel, active: true, defaultParams: *NewParams(), filters: default_filters}
+	rqa := make(chan bool, 1)
+	rqa <- true
+	return Client{name: name, channel: *channel, active: true, request_active: rqa, defaultParams: *NewParams(), filters: default_filters}
 }
 
 // Set socket timeout (default 10s) and whether to propagate this timeout through the call tree.
@@ -57,9 +60,6 @@ func (client *Client) Destroy() {
 // Create a Request to be sent by this client.
 // If a previous request has not been finished, this method returns nil.
 func (client *Client) NewRequest(service, endpoint string) *Request {
-	if client.request_active {
-		return nil
-	}
 	return &Request{client: client, params: client.defaultParams, service: service, endpoint: endpoint}
 }
 

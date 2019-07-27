@@ -1,13 +1,12 @@
 package server
 
 import (
-	"sync"
-
 	"clusterrpc/log"
 	smgr "clusterrpc/securitymanager"
 	"errors"
 	"fmt"
 	golog "log"
+	"sync"
 	"time"
 
 	zmq "github.com/pebbe/zmq4"
@@ -68,7 +67,6 @@ func NewIPCServer(path string, threads uint, security_manager *smgr.ServerSecuri
 }
 
 func newServer(bindurls []string, worker_threads uint, security_manager *smgr.ServerSecurityManager) (*Server, error) {
-
 	srv := new(Server)
 	srv.services = make(map[string]*service)
 	srv.timeout = time.Second * 3
