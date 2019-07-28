@@ -20,7 +20,7 @@ func TraceMergeFilter(rq *Request, next int) Response {
 	response := rq.callNextFilter(next)
 
 	if response.response != nil {
-		if rq.trace != nil {
+		if rq.trace != nil && response.response.GetTraceinfo() != nil {
 			*rq.trace = *response.response.GetTraceinfo()
 		}
 		if rq.ctx != nil {
