@@ -17,16 +17,7 @@ typedef struct {
 typedef void (crpc_handler_fn)(crpc_context*);
 typedef crpc_handler_fn* (crpc_dispatch_fn)(const char* service, const char* method);
 
-typedef struct {
-    zsock_t* front_router;
-    zsock_t* back_router;
-
-    // Set by client.
-    crpc_dispatch_fn* dispatch;
-
-    // TODO: Worker queue. For now, handle in main thread.
-} crpc_server;
-
-static const char *backend_router_address = "inproc://clusterrpc.backend_router";
+struct crpc_server;
+typedef struct crpc_server crpc_server;
 
 void crpc_start_server(const char* address, crpc_dispatch_fn* dispatch);
