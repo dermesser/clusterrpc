@@ -78,7 +78,6 @@ zmsg_t* dequeue_zmsg_t(zmsg_t** base, size_t cap, size_t* len, size_t* head) {
     return base[*head-1];
 }
 
-
 // send_response sends a response.
 //
 // It frees all zframe_t* arguments, but nothing else.
@@ -267,7 +266,6 @@ void crpc_start_server(const char* address, crpc_dispatch_fn* dispatch) {
         rpc_worker->dispatch = dispatch;
         assert(0 == pthread_create(&rpc_worker->thread, NULL, _crpc_server_thread, rpc_worker));
         server->workers[i] = rpc_worker;
-        //enqueue_int(i, server->free_workers_q, number_of_workers, &server->free_workers_len, &server->free_workers_t);
     }
 
     _crpc_server_main(server);
