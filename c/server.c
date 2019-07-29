@@ -1,6 +1,6 @@
-#include <stdio.h>
-#include <stdint.h>
 #include <pthread.h>
+#include <stdint.h>
+#include <stdio.h>
 
 #include "rpc.pb-c.h"
 
@@ -35,10 +35,10 @@ struct crpc_server {
 };
 
 // Enqueue an int to tail of an int queue.
-bool enqueue_int(int element, int* base, size_t cap, size_t* len, size_t* tail) {
+bool enqueue_int(int element, int* base, size_t cap, size_t* len,
+                 size_t* tail) {
     if (*len >= cap) return false;
-    if (*tail == cap)
-        *tail = 0;
+    if (*tail == cap) *tail = 0;
 
     base[*tail] = element;
     *tail += 1;
@@ -47,20 +47,20 @@ bool enqueue_int(int element, int* base, size_t cap, size_t* len, size_t* tail) 
 }
 int dequeue_int(int* base, size_t cap, size_t* len, size_t* head) {
     if (*len == 0) return -1;
-    if (*head == cap-1) {
+    if (*head == cap - 1) {
         *head = 0;
         *len -= 1;
-        return base[cap-1];
+        return base[cap - 1];
     }
     *head += 1;
     *len -= 1;
-    return base[*head-1];
+    return base[*head - 1];
 }
 
-bool enqueue_zmsg_t(zmsg_t* element, zmsg_t** base, size_t cap, size_t* len, size_t* tail) {
+bool enqueue_zmsg_t(zmsg_t* element, zmsg_t** base, size_t cap, size_t* len,
+                    size_t* tail) {
     if (*len >= cap) return false;
-    if (*tail == cap)
-        *tail = 0;
+    if (*tail == cap) *tail = 0;
 
     base[*tail] = element;
     *tail += 1;
@@ -69,14 +69,14 @@ bool enqueue_zmsg_t(zmsg_t* element, zmsg_t** base, size_t cap, size_t* len, siz
 }
 zmsg_t* dequeue_zmsg_t(zmsg_t** base, size_t cap, size_t* len, size_t* head) {
     if (*len == 0) return NULL;
-    if (*head == cap-1) {
+    if (*head == cap - 1) {
         *head = 0;
         *len -= 1;
-        return base[cap-1];
+        return base[cap - 1];
     }
     *head += 1;
     *len -= 1;
-    return base[*head-1];
+    return base[*head - 1];
 }
 
 typedef struct {
@@ -84,38 +84,46 @@ typedef struct {
     Proto__RPCRequest* request;
 } crpc_request;
 
-// Initialize a crpc_request from a request message. Takes ownership of request_msg.
+// Initialize a crpc_request from a request message. Takes ownership of
+// request_msg.
 static bool crpc_initialize_request(zmsg_t* request_msg, crpc_request* dest) {
-        if (zmsg_size(request_msg) != 4) {
-            fprintf(stderr, "Bad message size! Expected 4 frames, got %ld\n", zmsg_size(request_msg));
-            return false;
-        }
+    if (zmsg_size(request_msg) != 4) {
+        fprintf(stderr, "Bad message size! Expected 4 frames, got %ld\n",
+                zmsg_size(request_msg));
+        return false;
+    }
 
-        dest->client_id = zmsg_pop(request_msg);
-        dest->request_id = zmsg_pop(request_msg);
-        dest->zero = zmsg_pop(request_msg);
-        dest->data = zmsg_pop(request_msg);
-        zmsg_destroy(&request_msg);
-        dest->request = proto__rpcrequest__unpack(NULL, zframe_size(dest->data), zframe_data(dest->data));
-        return true;
+    dest->client_id = zmsg_pop(request_msg);
+    dest->request_id = zmsg_pop(request_msg);
+    dest->zero = zmsg_pop(request_msg);
+    dest->data = zmsg_pop(request_msg);
+    zmsg_destroy(&request_msg);
+    dest->request = proto__rpcrequest__unpack(NULL, zframe_size(dest->data),
+                                              zframe_data(dest->data));
+    return true;
 }
 
 // Frees fields of request (but not request itself).
 static void crpc_free_request(crpc_request* request) {
-    if (request->request) proto__rpcrequest__free_unpacked(request->request, NULL);
-    if (request->client_id && zframe_is(request->client_id)) zframe_destroy(&request->client_id);
-    if (request->request_id && zframe_is(request->request_id)) zframe_destroy(&request->request_id);
-    if (request->zero && zframe_is(request->zero)) zframe_destroy(&request->zero);
-    if (request->data && zframe_is(request->data)) zframe_destroy(&request->data);
+    if (request->request)
+        proto__rpcrequest__free_unpacked(request->request, NULL);
+    if (request->client_id && zframe_is(request->client_id))
+        zframe_destroy(&request->client_id);
+    if (request->request_id && zframe_is(request->request_id))
+        zframe_destroy(&request->request_id);
+    if (request->zero && zframe_is(request->zero))
+        zframe_destroy(&request->zero);
+    if (request->data && zframe_is(request->data))
+        zframe_destroy(&request->data);
 }
 
 // send_response sends a response.
 //
 // It frees all zframe_t* arguments, but nothing else.
-static void send_response(crpc_request* request, char* error_message, Proto__RPCResponse__Status
-        status,
-        uint8_t* response_data, size_t
-        response_data_len, zsock_t* front_router) {
+static void send_response(crpc_request* request, char* error_message,
+                          Proto__RPCResponse__Status status,
+                          uint8_t* response_data, size_t response_data_len,
+                          zsock_t* front_router) {
     Proto__RPCResponse response;
     proto__rpcresponse__init(&response);
     response.error_message = error_message;
@@ -125,7 +133,7 @@ static void send_response(crpc_request* request, char* error_message, Proto__RPC
     response.response_data.len = response_data_len;
     response.has_response_data = true;
 
-    #define small_response_len 128
+#define small_response_len 128
 
     uint8_t response_serialized_small[small_response_len];
     size_t response_len = proto__rpcresponse__get_packed_size(&response);
@@ -164,10 +172,12 @@ static void* crpc_server_thread(void* crpc_worker_info) {
             continue;
         }
 
-        crpc_handler_fn* handler = info->dispatch(request.request->srvc, request.request->procedure);
+        crpc_handler_fn* handler =
+            info->dispatch(request.request->srvc, request.request->procedure);
         if (!handler) {
-            send_response(&request, "no handler could be found", PROTO__RPCRESPONSE__STATUS__STATUS_NOT_FOUND, 
-                    NULL, 0, info->worker_req);
+            send_response(&request, "no handler could be found",
+                          PROTO__RPCRESPONSE__STATUS__STATUS_NOT_FOUND, NULL, 0,
+                          info->worker_req);
             crpc_free_request(&request);
             continue;
         }
@@ -179,14 +189,15 @@ static void* crpc_server_thread(void* crpc_worker_info) {
         (*handler)(&context);
 
         if (!context.ok) {
-            send_response(&request, context.error_string, PROTO__RPCRESPONSE__STATUS__STATUS_NOT_OK, 
-                    NULL, 0, info->worker_req);
+            send_response(&request, context.error_string,
+                          PROTO__RPCRESPONSE__STATUS__STATUS_NOT_OK, NULL, 0,
+                          info->worker_req);
             if (context.response) free(context.response);
             crpc_free_request(&request);
             continue;
         }
-        send_response(&request, "", PROTO__RPCRESPONSE__STATUS__STATUS_OK, 
-                context.response, context.response_len, info->worker_req);
+        send_response(&request, "", PROTO__RPCRESPONSE__STATUS__STATUS_OK,
+                      context.response, context.response_len, info->worker_req);
         free(context.response);
         crpc_free_request(&request);
     }
@@ -195,7 +206,8 @@ static void* crpc_server_thread(void* crpc_worker_info) {
 
 static void* crpc_server_main(void* server_v) {
     crpc_server* server = server_v;
-    zpoller_t* poll = zpoller_new(server->front_router, server->back_router, NULL);
+    zpoller_t* poll =
+        zpoller_new(server->front_router, server->back_router, NULL);
 
     while (true) {
         zsock_t* ready = zpoller_wait(poll, -1);
@@ -204,15 +216,16 @@ static void* crpc_server_main(void* server_v) {
             while ((msg = zmsg_recv_nowait(ready))) {
                 const char* id = NULL;
                 if (server->free_workers_len > 0) {
-                    int worker_ix = dequeue_int(server->free_workers_q,
-                            number_of_workers, &server->free_workers_len,
-                            &server->free_workers_h);
+                    int worker_ix = dequeue_int(
+                        server->free_workers_q, number_of_workers,
+                        &server->free_workers_len, &server->free_workers_h);
                     assert(worker_ix >= 0);
                     id = server->workers[worker_ix]->identity;
                 } else if (server->queued_messages_len < request_queue_length) {
                     enqueue_zmsg_t(msg, server->queued_messages,
-                            request_queue_length, &server->queued_messages_len,
-                            &server->queued_messages_t);
+                                   request_queue_length,
+                                   &server->queued_messages_len,
+                                   &server->queued_messages_t);
                     continue;
                 }
                 zmsg_t* be_msg = zmsg_new();
@@ -241,8 +254,9 @@ static void* crpc_server_main(void* server_v) {
 
                 if (server->queued_messages_len > 0) {
                     zmsg_t* qmsg = dequeue_zmsg_t(server->queued_messages,
-                            request_queue_length, &server->queued_messages_len,
-                            &server->queued_messages_h);
+                                                  request_queue_length,
+                                                  &server->queued_messages_len,
+                                                  &server->queued_messages_h);
                     if (qmsg && zmsg_is(qmsg)) {
                         zmsg_t* be_msg = zmsg_new();
                         zmsg_add(be_msg, worker_id);
@@ -259,8 +273,8 @@ static void* crpc_server_main(void* server_v) {
                 zframe_destroy(&worker_id);
                 zframe_destroy(&zero);
                 enqueue_int(worker_id_int, server->free_workers_q,
-                        number_of_workers, &server->free_workers_len,
-                        &server->free_workers_t);
+                            number_of_workers, &server->free_workers_len,
+                            &server->free_workers_t);
             }
         } else {
             break;
@@ -277,7 +291,8 @@ void crpc_start_server(const char* address, crpc_dispatch_fn* dispatch) {
     memset(server, 0, sizeof(crpc_server));
 
     char* backend_router_address = malloc(128);
-    snprintf(backend_router_address, 128, "inproc://backend.router.%d", getpid());
+    snprintf(backend_router_address, 128, "inproc://backend.router.%d",
+             getpid());
     server->front_router = zsock_new_router(address);
     server->back_router = zsock_new_router(backend_router_address);
     server->dispatch = dispatch;
@@ -297,7 +312,8 @@ void crpc_start_server(const char* address, crpc_dispatch_fn* dispatch) {
         rpc_worker->identity = identity;
         rpc_worker->worker_req = worker;
         rpc_worker->dispatch = dispatch;
-        assert(0 == pthread_create(&rpc_worker->thread, NULL, crpc_server_thread, rpc_worker));
+        assert(0 == pthread_create(&rpc_worker->thread, NULL,
+                                   crpc_server_thread, rpc_worker));
         server->workers[i] = rpc_worker;
     }
 

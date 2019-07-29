@@ -14,8 +14,9 @@ typedef struct {
     size_t response_len;
 } crpc_context;
 
-typedef void (crpc_handler_fn)(crpc_context*);
-typedef crpc_handler_fn* (crpc_dispatch_fn)(const char* service, const char* method);
+typedef void(crpc_handler_fn)(crpc_context*);
+typedef crpc_handler_fn*(crpc_dispatch_fn)(const char* service,
+                                           const char* method);
 
 struct crpc_server;
 typedef struct crpc_server crpc_server;
