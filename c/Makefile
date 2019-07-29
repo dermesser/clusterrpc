@@ -1,13 +1,14 @@
 
-LIBS=-lpthread -lprotobuf-c -lczmq
+CFLAGS=-g -Wall
+LIBS=-lpthread -lprotobuf-c -lzmq -lczmq
 DEPS=server.h
 MAIN_FILES=server.o rpc.pb-c.o
 
 all: protos test_main.c $(MAIN_FILES)
-	gcc -o test_main -g -Wall $(LIBS) $(MAIN_FILES) test_main.c
+	gcc $(LIBS) -o test_main $(CFLAGS) $(MAIN_FILES) test_main.c
 
 %.o: %.c $(DEPS)
-	gcc -g -c -o $@ $< $(CFLAGS)
+	gcc -c $(CFLAGS) -o $@ $<
 
 protos: ../proto/rpc.proto
 	cd ../proto && protoc --c_out=../c/ rpc.proto
