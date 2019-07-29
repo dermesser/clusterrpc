@@ -6,7 +6,7 @@
 static void generic_handler(crpc_context* ctx) {
     char* input = malloc(ctx->input_len+1);
     strncpy(input, (char*)ctx->input, ctx->input_len);
-    if (ctx->input_len > 0) fprintf(stderr, "received request: %s\n", input);
+    //if (ctx->input_len > 0) fprintf(stderr, "received request: %s\n", input);
     ctx->ok = true;
     ctx->response = (uint8_t*)input;
     ctx->response_len = ctx->input_len+1;
@@ -14,8 +14,6 @@ static void generic_handler(crpc_context* ctx) {
 }
 
 static crpc_handler_fn* dispatch(const char* service, const char* method) {
-    fprintf(stderr, "received request for %s.%s\n", service, method);
-
     return generic_handler;
 }
 

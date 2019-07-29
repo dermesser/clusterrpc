@@ -13,7 +13,8 @@ typedef struct {
     pthread_t thread;
 } crpc_worker;
 
-#define number_of_workers 128
+#define number_of_workers 12
+#define request_queue_length 512
 
 struct crpc_server {
     zsock_t* front_router;
@@ -23,14 +24,68 @@ struct crpc_server {
     crpc_dispatch_fn* dispatch;
 
     crpc_worker* workers[number_of_workers];
-    int next_worker;
+
+    int free_workers_q[number_of_workers];
+    size_t free_workers_h, free_workers_t;
+    size_t free_workers_len;
+    zmsg_t* queued_messages[request_queue_length];
+    size_t queued_messages_h, queued_messages_t;
+    size_t queued_messages_len;
 };
+
+// Enqueue an int to tail of an int queue.
+bool enqueue_int(int element, int* base, size_t cap, size_t* len, size_t* tail) {
+    if (*len >= cap) return false;
+    if (*tail == cap)
+        *tail = 0;
+
+    base[*tail] = element;
+    *tail += 1;
+    *len += 1;
+    return true;
+}
+int dequeue_int(int* base, size_t cap, size_t* len, size_t* head) {
+    if (*len == 0) return -1;
+    if (*head == cap-1) {
+        *head = 0;
+        *len -= 1;
+        return base[cap-1];
+    }
+    *head += 1;
+    *len -= 1;
+    return base[*head-1];
+}
+
+bool enqueue_zmsg_t(zmsg_t* element, zmsg_t** base, size_t cap, size_t* len, size_t* tail) {
+    if (*len >= cap) return false;
+    if (*tail == cap)
+        *tail = 0;
+
+    base[*tail] = element;
+    *tail += 1;
+    *len += 1;
+    return true;
+}
+zmsg_t* dequeue_zmsg_t(zmsg_t** base, size_t cap, size_t* len, size_t* head) {
+    if (*len == 0) return NULL;
+    if (*head == cap-1) {
+        *head = 0;
+        *len -= 1;
+        return base[cap-1];
+    }
+    *head += 1;
+    *len -= 1;
+    return base[*head-1];
+}
+
 
 // send_response sends a response.
 //
 // It frees all zframe_t* arguments, but nothing else.
-static void send_response(char* error_message, Proto__RPCResponse__Status status, zframe_t* client_id,
-        zframe_t* request_id, zframe_t* zero_frame, char* rpc_id, uint8_t* response_data, size_t response_data_len, zsock_t* front_router) {
+static void send_response(char* error_message, Proto__RPCResponse__Status
+        status, zframe_t* client_id, zframe_t* request_id, zframe_t*
+        zero_frame, char* rpc_id, uint8_t* response_data, size_t
+        response_data_len, zsock_t* front_router) {
     Proto__RPCResponse response;
     proto__rpcresponse__init(&response);
     response.error_message = error_message;
@@ -115,9 +170,20 @@ static void* _crpc_server_main(void* server_v) {
         if (ready == server->front_router) {
             zmsg_t* msg;
             while ((msg = zmsg_recv_nowait(ready))) {
+                const char* id = NULL;
+                if (server->free_workers_len > 0) {
+                    int worker_ix = dequeue_int(server->free_workers_q,
+                            number_of_workers, &server->free_workers_len,
+                            &server->free_workers_h);
+                    assert(worker_ix >= 0);
+                    id = server->workers[worker_ix]->identity;
+                } else if (server->queued_messages_len < request_queue_length) {
+                    enqueue_zmsg_t(msg, server->queued_messages,
+                            request_queue_length, &server->queued_messages_len,
+                            &server->queued_messages_t);
+                    continue;
+                }
                 zmsg_t* be_msg = zmsg_new();
-                const char* id = server->workers[server->next_worker]->identity;
-                server->next_worker = (server->next_worker+1)%number_of_workers;
                 zmsg_addstr(be_msg, id);
                 zmsg_addstr(be_msg, "");
                 zmsg_add(be_msg, zmsg_pop(msg));
@@ -125,15 +191,44 @@ static void* _crpc_server_main(void* server_v) {
                 zmsg_add(be_msg, zmsg_pop(msg));
                 zmsg_add(be_msg, zmsg_pop(msg));
                 zmsg_send(&be_msg, server->back_router);
+                zmsg_destroy(&msg);
             }
         } else if (ready == server->back_router) {
             zmsg_t* msg;
             while ((msg = zmsg_recv_nowait(ready))) {
                 zframe_t* worker_id = zmsg_pop(msg);
+                size_t worker_id_int = 0;
+                for (size_t i = 0; i < number_of_workers; i++) {
+                    if (zframe_streq(worker_id, server->workers[i]->identity)) {
+                        worker_id_int = i;
+                        break;
+                    }
+                }
                 zframe_t* zero = zmsg_pop(msg);
+                zmsg_send(&msg, server->front_router);
+
+                if (server->queued_messages_len > 0) {
+                    zmsg_t* qmsg = dequeue_zmsg_t(server->queued_messages,
+                            request_queue_length, &server->queued_messages_len,
+                            &server->queued_messages_h);
+                    if (qmsg && zmsg_is(qmsg)) {
+                        zmsg_t* be_msg = zmsg_new();
+                        zmsg_add(be_msg, worker_id);
+                        zmsg_add(be_msg, zero);
+                        zmsg_add(be_msg, zmsg_pop(qmsg));
+                        zmsg_add(be_msg, zmsg_pop(qmsg));
+                        zmsg_add(be_msg, zmsg_pop(qmsg));
+                        zmsg_add(be_msg, zmsg_pop(qmsg));
+                        zmsg_send(&be_msg, server->back_router);
+                        zmsg_destroy(&qmsg);
+                        break;
+                    }
+                }
                 zframe_destroy(&worker_id);
                 zframe_destroy(&zero);
-                zmsg_send(&msg, server->front_router);
+                enqueue_int(worker_id_int, server->free_workers_q,
+                        number_of_workers, &server->free_workers_len,
+                        &server->free_workers_t);
             }
         } else {
             break;
@@ -147,10 +242,10 @@ static void* _crpc_server_main(void* server_v) {
 void crpc_start_server(const char* address, crpc_dispatch_fn* dispatch) {
     crpc_server* server = malloc(sizeof(crpc_server));
     if (!server) return;
+    memset(server, 0, sizeof(crpc_server));
 
     char* backend_router_address = malloc(128);
     snprintf(backend_router_address, 128, "inproc://backend.router.%d", getpid());
-    server->next_worker = 0;
     server->front_router = zsock_new_router(address);
     server->back_router = zsock_new_router(backend_router_address);
     server->dispatch = dispatch;
@@ -172,6 +267,7 @@ void crpc_start_server(const char* address, crpc_dispatch_fn* dispatch) {
         rpc_worker->dispatch = dispatch;
         assert(0 == pthread_create(&rpc_worker->thread, NULL, _crpc_server_thread, rpc_worker));
         server->workers[i] = rpc_worker;
+        //enqueue_int(i, server->free_workers_q, number_of_workers, &server->free_workers_len, &server->free_workers_t);
     }
 
     _crpc_server_main(server);

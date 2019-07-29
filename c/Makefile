@@ -1,5 +1,5 @@
 
-CFLAGS=-g -Wall
+CFLAGS=-g -Wall -O3
 LIBS=-lpthread -lprotobuf-c -lzmq -lczmq
 DEPS=server.h
 MAIN_FILES=server.o rpc.pb-c.o
