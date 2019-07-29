@@ -13,7 +13,7 @@ typedef struct {
     pthread_t thread;
 } crpc_worker;
 
-#define number_of_workers 4
+#define number_of_workers 128
 
 struct crpc_server {
     zsock_t* front_router;
@@ -28,7 +28,7 @@ struct crpc_server {
 
 // send_response sends a response.
 //
-// It frees response_data and all zframe_t* arguments.
+// It frees all zframe_t* arguments, but nothing else.
 static void send_response(char* error_message, Proto__RPCResponse__Status status, zframe_t* client_id,
         zframe_t* request_id, zframe_t* zero_frame, char* rpc_id, uint8_t* response_data, size_t response_data_len, zsock_t* front_router) {
     Proto__RPCResponse response;
@@ -50,7 +50,6 @@ static void send_response(char* error_message, Proto__RPCResponse__Status status
     zmsg_addmem(response_msg, response_serialized, response_len);
     zmsg_send(&response_msg, front_router);
     free(response_serialized);
-    free(response_data);
 }
 
 const char* ready_string = "__ready__";
@@ -100,7 +99,9 @@ static void* _crpc_server_thread(void* crpc_worker_info) {
         send_response("", PROTO__RPCRESPONSE__STATUS__STATUS_OK, client_id,
                 request_id, zero, request->rpc_id, context.response, context.response_len, info->worker_req);
         proto__rpcrequest__free_unpacked(request, NULL);
+        free(context.response);
         zmsg_destroy(&request_msg);
+        zframe_destroy(&data);
     }
     return NULL;
 }
@@ -115,7 +116,8 @@ static void* _crpc_server_main(void* server_v) {
             zmsg_t* msg;
             while ((msg = zmsg_recv_nowait(ready))) {
                 zmsg_t* be_msg = zmsg_new();
-                const char* id = server->workers[(server->next_worker+1)%number_of_workers]->identity;
+                const char* id = server->workers[server->next_worker]->identity;
+                server->next_worker = (server->next_worker+1)%number_of_workers;
                 zmsg_addstr(be_msg, id);
                 zmsg_addstr(be_msg, "");
                 zmsg_add(be_msg, zmsg_pop(msg));
@@ -129,6 +131,8 @@ static void* _crpc_server_main(void* server_v) {
             while ((msg = zmsg_recv_nowait(ready))) {
                 zframe_t* worker_id = zmsg_pop(msg);
                 zframe_t* zero = zmsg_pop(msg);
+                zframe_destroy(&worker_id);
+                zframe_destroy(&zero);
                 zmsg_send(&msg, server->front_router);
             }
         } else {
@@ -154,7 +158,6 @@ void crpc_start_server(const char* address, crpc_dispatch_fn* dispatch) {
     zsock_set_router_mandatory(server->front_router, 1);
     zsock_set_router_mandatory(server->back_router, 1);
 
-    // 128 workers for now.
     for (int i = 0; i < number_of_workers; i++) {
         char* identity = malloc(5);
         snprintf(identity, 5, "%04d", i);
