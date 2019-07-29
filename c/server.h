@@ -7,9 +7,9 @@ typedef struct {
 
     // OUT
     _Bool ok;
-    // Freed by server.
+    // Freed by server. Must be dynamically allocated.
     char* error_string;
-    // Freed by server.
+    // Freed by server. Must be dynamically allocated.
     uint8_t* response;
     size_t response_len;
 } crpc_context;
