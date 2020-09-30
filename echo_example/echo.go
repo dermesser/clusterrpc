@@ -11,11 +11,12 @@ or
 package main
 
 import (
-	"clusterrpc/client"
-	rpclog "clusterrpc/log"
-	"clusterrpc/proto"
-	smgr "clusterrpc/securitymanager"
-	"clusterrpc/server"
+	"github.com/dermesser/clusterrpc/client"
+	rpclog "github.com/dermesser/clusterrpc/log"
+	"github.com/dermesser/clusterrpc/proto"
+	smgr "github.com/dermesser/clusterrpc/securitymanager"
+	"github.com/dermesser/clusterrpc/server"
+
 	"flag"
 	"fmt"
 	"os"

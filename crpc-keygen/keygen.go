@@ -1,9 +1,10 @@
 package main
 
 import (
-	"clusterrpc/securitymanager"
 	"flag"
 	"fmt"
+
+	"github.com/dermesser/clusterrpc/securitymanager"
 )
 
 func main() {

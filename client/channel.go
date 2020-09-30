@@ -1,9 +1,9 @@
 package client
 
 import (
-	"clusterrpc/log"
-	smgr "clusterrpc/securitymanager"
 	"fmt"
+	"github.com/dermesser/clusterrpc/log"
+	smgr "github.com/dermesser/clusterrpc/securitymanager"
 	"time"
 
 	zmq "github.com/pebbe/zmq4"

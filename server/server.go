@@ -1,10 +1,10 @@
 package server
 
 import (
-	"clusterrpc/log"
-	smgr "clusterrpc/securitymanager"
 	"errors"
 	"fmt"
+	"github.com/dermesser/clusterrpc/log"
+	smgr "github.com/dermesser/clusterrpc/securitymanager"
 	golog "log"
 	"sync"
 	"time"

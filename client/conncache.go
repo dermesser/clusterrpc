@@ -1,7 +1,8 @@
 package client
 
 import (
-	smgr "clusterrpc/securitymanager"
+	smgr "github.com/dermesser/clusterrpc/securitymanager"
+
 	"container/list"
 	"sync"
 	"time"

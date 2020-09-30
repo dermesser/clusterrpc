@@ -1,9 +1,9 @@
 package client
 
 import (
-	"clusterrpc/log"
-	"clusterrpc/proto"
 	"fmt"
+	"github.com/dermesser/clusterrpc/log"
+	"github.com/dermesser/clusterrpc/proto"
 	"time"
 )
 

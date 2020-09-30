@@ -1,8 +1,8 @@
 package server
 
 import (
-	"clusterrpc/proto"
 	"errors"
+	"github.com/dermesser/clusterrpc/proto"
 	"log"
 	"time"
 

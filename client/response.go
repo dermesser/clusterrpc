@@ -1,7 +1,7 @@
 package client
 
 import (
-	"clusterrpc/proto"
+	"github.com/dermesser/clusterrpc/proto"
 
 	pb "github.com/gogo/protobuf/proto"
 )

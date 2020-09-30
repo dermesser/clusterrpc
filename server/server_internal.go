@@ -2,10 +2,10 @@ package server
 
 import (
 	"bytes"
-	"clusterrpc/log"
-	"clusterrpc/proto"
-	"clusterrpc/server/queue"
 	"fmt"
+	"github.com/dermesser/clusterrpc/log"
+	"github.com/dermesser/clusterrpc/proto"
+	"github.com/dermesser/clusterrpc/server/queue"
 	"time"
 
 	pb "github.com/gogo/protobuf/proto"

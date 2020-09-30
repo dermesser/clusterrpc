@@ -2,10 +2,11 @@ package client
 
 import (
 	"bytes"
-	"clusterrpc/proto"
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/dermesser/clusterrpc/proto"
 )
 
 // Utility functions

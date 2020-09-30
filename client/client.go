@@ -1,7 +1,7 @@
 package client
 
 import (
-	"clusterrpc/proto"
+	"github.com/dermesser/clusterrpc/proto"
 	golog "log"
 	"time"
 

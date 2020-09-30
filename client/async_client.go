@@ -1,8 +1,8 @@
 package client
 
 import (
-	"clusterrpc/log"
-	smgr "clusterrpc/securitymanager"
+	"github.com/dermesser/clusterrpc/log"
+	smgr "github.com/dermesser/clusterrpc/securitymanager"
 	"time"
 )
 

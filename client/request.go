@@ -1,10 +1,10 @@
 package client
 
 import (
-	"clusterrpc/log"
-	"clusterrpc/proto"
-	"clusterrpc/server"
 	"errors"
+	"github.com/dermesser/clusterrpc/log"
+	"github.com/dermesser/clusterrpc/proto"
+	"github.com/dermesser/clusterrpc/server"
 	"time"
 
 	pb "github.com/gogo/protobuf/proto"
