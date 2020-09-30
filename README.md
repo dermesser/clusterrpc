@@ -1,1 +1,1 @@
-See `godoc clusterrpc` (or doc.go)
+See `go doc`
