@@ -123,7 +123,7 @@ func (c *RpcChannel) Connect(addr PeerAddress) error {
 
 	if err != nil {
 		log.CRPC_log(log.LOGLEVEL_ERRORS, "Could not establish connection to single peer;",
-			err.Error, fmt.Sprintf("tcp://%s:%d", addr.host, addr.port))
+			err.Error(), fmt.Sprintf("tcp://%s:%d", addr.host, addr.port))
 		return err
 	}
 	c.peers = append(c.peers, addr)
