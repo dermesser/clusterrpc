@@ -140,7 +140,7 @@ func newServer(bindurls []string, worker_threads uint, security_manager *smgr.Se
 
 /*
 Starts worker threads. Returns an error if any thread couldn't set up its socket,
-otherwise nil. The error is logged at any LOGLEVEL.
+otherwise it blocks until the server is stopped. The error is logged at any LOGLEVEL.
 */
 func (srv *Server) Start() error {
 

@@ -8,12 +8,16 @@ import (
 
 // ClientSecurityManager manages encryption for client sockets.
 type ClientSecurityManager struct {
+	// Provides LoadKeys/WriteKeys functionality
 	*keyWriteLoader
+	// Public key of the server to connect to.
 	serverPublic string
 }
 
 // NewClientSecurityManager sets up the manager and generates a new client key pair.
-// The server public key is not yet loaded!
+//
+// In order to connect to a server, the server's public key must be set before creating a
+// client. Otherwise, the connection will not succeed.
 func NewClientSecurityManager() *ClientSecurityManager {
 	mgr := &ClientSecurityManager{}
 	var err error
@@ -28,8 +32,9 @@ func NewClientSecurityManager() *ClientSecurityManager {
 	return mgr
 }
 
-// ApplyToClientSocket sets up a client socket for CURVE security. If called on nil, does nothing.
-// This function must be called before calling Connect() on the socket!
+// For internal use: ApplyToClientSocket sets up a client socket for CURVE security. If
+// called on nil, does nothing. This function must be called before calling Connect() on
+// the socket!
 func (mgr *ClientSecurityManager) ApplyToClientSocket(sock *zmq4.Socket) error {
 	if mgr == nil {
 		return nil
@@ -56,7 +61,8 @@ func (mgr *ClientSecurityManager) ApplyToClientSocket(sock *zmq4.Socket) error {
 	return nil
 }
 
-// SetServerPubkey sets the public key of the server.
+// SetServerPubkey sets the public key of the server. This is required to be able to
+// connect to a server using a secure connection.
 func (mgr *ClientSecurityManager) SetServerPubkey(key string) {
 	mgr.serverPublic = key
 }
