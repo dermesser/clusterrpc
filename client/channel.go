@@ -71,8 +71,10 @@ type RpcChannel struct {
 	// Slices to allow multiple connections (round-robin)
 	peers []PeerAddress
 
+	// Parallel request handling
+	stop     chan bool
 	clientId []byte
-	inFlight map[string]chan []byte
+	inFlight map[string]chan clientResp
 }
 
 // Create a new RpcChannel.
@@ -172,7 +174,28 @@ func (c *RpcChannel) destroy() {
 	c.channel.Close()
 }
 
-func (c *RpcChannel) sendMessage(request []byte) error {
+type clientResp struct {
+	resp []byte
+	err  error
+}
+
+// Dispatch incoming responses to clients
+func (c *RpcChannel) backgroundDispatcher() {
+	for {
+		frames, err := c.channel.RecvMessageBytes(0)
+		ch := c.inFlight[string(frames[0])]
+		if err != nil {
+			ch <- clientResp{err: err}
+			continue
+		}
+		if ch == nil {
+			log.CRPC_log(log.LOGLEVEL_ERRORS, "Client not found!")
+		}
+		ch <- clientResp{resp: frames[3]}
+	}
+}
+
+func (c *RpcChannel) sendMessage(request []byte) (string, error) {
 	rqId := log.GetLogToken()
 	ch := make(chan []byte)
 	c.inFlight[rqId] = ch
@@ -180,7 +203,6 @@ func (c *RpcChannel) sendMessage(request []byte) error {
 	return err
 }
 
-func (c *RpcChannel) receiveMessage() ([]byte, error) {
-	frames, err := c.channel.RecvMessageBytes(0)
-	return msg, err
+func (c *RpcChannel) receiveMessage(rqId string) ([]byte, error) {
+	return
 }
