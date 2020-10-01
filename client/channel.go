@@ -27,6 +27,7 @@ func IPCPeer(path string) PeerAddress {
 	return PeerAddress{path: path}
 }
 
+// Convert a PeerAddress to a ZeroMQ URL.
 func (pa *PeerAddress) ToUrl() string {
 	if pa.host != "" {
 		return fmt.Sprintf("tcp://%s:%d", pa.host, pa.port)
@@ -59,6 +60,7 @@ func (pa *PeerAddress) equals(pa2 PeerAddress) bool {
 }
 
 // A channel to an RPC server. It is threadsafe, but should not be shared among multiple clients.
+//
 // TODO(lbo): Think about implementing a channel on top of DEALER, with a
 // background goroutine delivering results to waiting requests.
 type RpcChannel struct {

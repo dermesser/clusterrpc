@@ -96,6 +96,7 @@ func (srv *Server) stop() error {
 
 func (srv *Server) handleIncomingRpc(worker_queue *queue.Queue, request_queue *queue.Queue) {
 	// The message we're receiving here has this format: [requestId, clientIdentity, "", data].
+	// See documentation about REQ_CORRELATE.
 	msgs, err := srv.frontend_router.RecvMessageBytes(0)
 
 	if err != nil {

@@ -11,17 +11,17 @@ type Response struct {
 	response *proto.RPCResponse
 }
 
-// Check whether the request was successful
+// Check whether the request was successful.
 func (rp *Response) Ok() bool {
 	return rp.err == nil && rp.response.GetResponseStatus() == proto.RPCResponse_STATUS_OK
 }
 
-// Returns the response payload
+// Returns the response payload.
 func (rp *Response) Payload() []byte {
 	return rp.response.GetResponseData()
 }
 
-// Unmarshals the response into msg
+// Unmarshals the response into msg.
 func (rp *Response) GetResponseMessage(msg pb.Message) error {
 	return pb.Unmarshal(rp.response.GetResponseData(), msg)
 }

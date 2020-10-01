@@ -8,14 +8,15 @@ import (
 	pb "github.com/gogo/protobuf/proto"
 )
 
-// A (new) client object. It contains a channel
+// A client contains a channel and some metadata, a state machine, and a stack of client filters.
 type Client struct {
 	channel RpcChannel
 	name    string
 
 	active bool
-	// To prevent hassle with the REQ state machine, we implement a similar one ourselves; as long as request_active == true,
-	// no new requests can be created
+	// To prevent hassle with the REQ state machine, we implement a similar
+	// one ourselves; as long as request_active == true, no new requests
+	// can be created
 	request_active chan bool
 
 	defaultParams RequestParams
@@ -57,14 +58,14 @@ func (client *Client) Destroy() {
 	client.active = false
 }
 
-// Create a Request to be sent by this client.
-// If a previous request has not been finished, this method returns nil.
+// Create a Request to be sent by this client. If a previous request has not
+// been finished, this method returns nil!
 func (client *Client) NewRequest(service, endpoint string) *Request {
 	return &Request{client: client, params: client.defaultParams, service: service, endpoint: endpoint}
 }
 
-// Sends a request to the server, asking whether it accepts requests and testing general connectivity.
-// Uses a timeout of 1 second.
+// Sends a request to the server, asking whether it accepts requests and
+// testing general connectivity. Uses a timeout of 1 second.
 func (client *Client) IsHealthy() bool {
 	return client.IsHealthyWithin(1 * time.Second)
 }
@@ -75,7 +76,7 @@ func (client *Client) IsHealthyWithin(d time.Duration) bool {
 	return rp.Ok()
 }
 
-// Legacy API
+// Oneshot-API: Send a request with raw data to the connected RPC server.
 func (cl *Client) Request(data []byte, service, endpoint string, trace_dest *proto.TraceInfo) ([]byte, error) {
 	rp := cl.NewRequest(service, endpoint).SetTrace(trace_dest).Go(data)
 
@@ -85,6 +86,7 @@ func (cl *Client) Request(data []byte, service, endpoint string, trace_dest *pro
 	return rp.Payload(), nil
 }
 
+// Oneshot-API: Send a request with the given protocol buffers to the connected RPC server.
 func (cl *Client) RequestProtobuf(request, reply pb.Message, service, endpoint string, trace_dest *proto.TraceInfo) error {
 	rp := cl.NewRequest(service, endpoint).SetTrace(trace_dest).GoProto(request)
 
