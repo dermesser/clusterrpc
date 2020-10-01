@@ -1,0 +1,9 @@
+Small C library to write RPC servers in. Doesn't have very many features yet,
+but useful (and high-performance) servers can already be implemented.
+
+Example:
+
+```
+$ ./test_main &
+$ ../echo_example/echo_example -secure=false -cl -port=9500
+```
