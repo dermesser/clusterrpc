@@ -63,11 +63,16 @@ func (pa *PeerAddress) equals(pa2 PeerAddress) bool {
 //
 // TODO(lbo): Think about implementing a channel on top of DEALER, with a
 // background goroutine delivering results to waiting requests.
+//
+// The protocol here looks as follows: [request ID, client ID, "", payload].
+// It is (currently) fully managed by ZeroMQ.
 type RpcChannel struct {
 	channel *zmq.Socket
-
 	// Slices to allow multiple connections (round-robin)
 	peers []PeerAddress
+
+	clientId []byte
+	inFlight map[string]chan []byte
 }
 
 // Create a new RpcChannel.
@@ -76,7 +81,7 @@ func NewRpcChannel(security_manager *smgr.ClientSecurityManager) (*RpcChannel, e
 	channel := RpcChannel{}
 
 	var err error
-	channel.channel, err = zmq.NewSocket(zmq.REQ)
+	channel.channel, err = zmq.NewSocket(zmq.DEALER)
 
 	if err != nil {
 		log.CRPC_log(log.LOGLEVEL_ERRORS, "Error when creating Req socket:", err.Error())
@@ -99,8 +104,10 @@ func NewRpcChannel(security_manager *smgr.ClientSecurityManager) (*RpcChannel, e
 
 	channel.channel.SetSndtimeo(10 * time.Second)
 	channel.channel.SetRcvtimeo(10 * time.Second)
-	channel.channel.SetReqRelaxed(1)
-	channel.channel.SetReqCorrelate(1)
+	//channel.channel.SetReqRelaxed(1)
+	//channel.channel.SetReqCorrelate(1)
+
+	channel.clientId = []byte(log.GetLogToken())
 
 	return &channel, nil
 }
@@ -166,11 +173,14 @@ func (c *RpcChannel) destroy() {
 }
 
 func (c *RpcChannel) sendMessage(request []byte) error {
-	_, err := c.channel.SendBytes(request, 0)
+	rqId := log.GetLogToken()
+	ch := make(chan []byte)
+	c.inFlight[rqId] = ch
+	_, err := c.channel.SendMessage(rqId, c.clientId, "", request)
 	return err
 }
 
 func (c *RpcChannel) receiveMessage() ([]byte, error) {
-	msg, err := c.channel.RecvBytes(0)
+	frames, err := c.channel.RecvMessageBytes(0)
 	return msg, err
 }
