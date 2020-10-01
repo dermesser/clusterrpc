@@ -32,9 +32,9 @@ type Server struct {
 	rpclogger *golog.Logger
 }
 
-/*
-Type of a function that is called when the corresponding endpoint is requested.
-*/
+// A function that is called when the corresponding endpoint is requested. Note that it
+// makes sense to use a bound function: RegisterHandler("Service", "Method",
+// server.method) wherein server is an object with associated function method().
 type Handler (func(*Context))
 
 type service struct {

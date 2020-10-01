@@ -9,10 +9,7 @@ import (
 	pb "github.com/gogo/protobuf/proto"
 )
 
-/*
-Opaque structure that contains request information
-and takes the response.
-*/
+// Opaque structure that contains request information and takes the response.
 type Context struct {
 	input, result []byte
 	failed        bool
@@ -48,12 +45,13 @@ func (srv *Server) newContext(request *proto.RPCRequest, logger *log.Logger) *Co
 	return c
 }
 
-// For half-external use, e.g. by the client package. Returns not nil when the current call tree is traced.
+// For half-external use, e.g. by the client package. Returns not nil when the current
+// call tree is traced.
 func (c *Context) GetTraceInfo() *proto.TraceInfo {
 	return c.this_call
 }
 
-// Append traceinfo from child call
+// Append traceinfo from child call.
 func (c *Context) AppendCallTrace(traceinfo *proto.TraceInfo) {
 	if traceinfo != nil {
 		c.this_call.ChildCalls = append(c.this_call.ChildCalls, traceinfo)
@@ -61,17 +59,13 @@ func (c *Context) AppendCallTrace(traceinfo *proto.TraceInfo) {
 	return
 }
 
-/*
-Get the data that was sent by the client.
-*/
+// Get the bytes sent by the client.
 func (c *Context) GetInput() []byte {
 	c.rpclogRaw(c.input, log_REQUEST)
 	return c.input
 }
 
-/*
-GetArgument serializes the input in a protocol buffer message.
-*/
+// GetArgument serializes the input (from GetInput()) in a protocol buffer message.
 func (c *Context) GetArgument(msg pb.Message) error {
 	err := pb.Unmarshal(c.input, msg)
 
@@ -84,45 +78,38 @@ func (c *Context) GetArgument(msg pb.Message) error {
 	return err
 }
 
-/*
-GetClientId returns the identification that the client sent.
-*/
+// GetClientId returns the identification that the client sent.
 func (c *Context) GetClientId() string {
 	return c.orig_rq.GetCallerId()
 }
 
-/*
-Get the absolute deadline requested by the caller.
-*/
+// Get the absolute deadline requested by the caller.
 func (c *Context) GetDeadline() time.Time {
 	return c.deadline
 }
 
+// Returns a channel that is sent a value when the deadline of this RPC has passed.
 func (c *Context) GetDeadlineNotifier() <-chan time.Time {
 	return time.After(c.deadline.Sub(time.Now()))
 }
 
-/*
-Fail with msg as error message (gets sent back to the client)
-*/
+// Fail with msg as error message (sent back to the client)
 func (c *Context) Fail(msg string) {
 	c.failed = true
 	c.error_message = msg
 	c.rpclogErr(errors.New(msg))
 }
 
-/*
-Set Success flag and the data to return to the caller.
-*/
+// Set Success flag and the data to return to the caller.
 func (c *Context) Success(data []byte) {
 	c.result = data
 	c.rpclogRaw(data, log_RESPONSE)
 }
 
-/*
-Set Success flag and the message to return to the caller. Does not do anything special, such as
-terminate the calling function etc.
-*/
+// Set Success flag and the message to return to the caller. Does not do anything special,
+// such as terminate the calling function etc.
+//
+// This is essentially Success(), but with implicit protobuf serialization.
 func (c *Context) Return(msg pb.Message) error {
 	result, err := pb.Marshal(msg)
 

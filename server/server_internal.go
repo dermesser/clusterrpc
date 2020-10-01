@@ -254,10 +254,10 @@ func (srv *Server) loadbalance() {
 	}
 }
 
-// Start a single worker thread; spawn a goroutine if spawn == true. Otherwise, execute in the current thread.
-// This thread will later execute the registered handlers.
+// Start a single worker thread; spawn a goroutine if spawn == true. Otherwise, execute in
+// the current thread. This thread will later execute the registered handlers.
 func (srv *Server) thread(n uint, spawn bool) error {
-	// Yes, we're using a REQ socket for the worker
+	// Yes, we're using a REQ socket for the worker,
 	// see http://zguide.zeromq.org/page:all#toc72
 	sock, err := zmq.NewSocket(zmq.REQ)
 
@@ -294,26 +294,26 @@ func (srv *Server) thread(n uint, spawn bool) error {
 	return nil
 }
 
-// This function runs in the (few) threads of the RPC server.
+// This function runs in the (few) threads of the RPC server, and receives the client
+// requests.
 func (srv *Server) acceptRequests(sock *zmq.Socket, worker_identity string) error {
 
 	// Send bogus parts so we have the correct number of frames in this message. (doesn't impact performance)
 	sock.SendMessage(newClientMessage([]byte("__BOGUS_REQ_ID"), []byte("___BOGUS_clientId"), MAGIC_READY_STRING).serializeClientMessage())
 
 	for {
-		// We're getting here the following message parts: [requestId, client identity, "", data]
+		// We're receiving the following message parts: [requestId, client identity, "", data]
 		msgs, err := sock.RecvMessageBytes(0)
 
 		if err == nil {
 			message := parseClientMessage(msgs)
 
-			if log.IsLoggingEnabled(log.LOGLEVEL_DEBUG) {
-				log.CRPC_log(log.LOGLEVEL_DEBUG, fmt.Sprintf("Worker #%s received message from %x", worker_identity, message.clientId))
+			if log.IsLoggingEnabled(log.LOGLEVEL_INFO) {
+				log.CRPC_log(log.LOGLEVEL_INFO, fmt.Sprintf("Worker #%s received message from %x", worker_identity, message.clientId))
 			}
 
 			if bytes.Equal(message.payload, MAGIC_STOP_STRING) {
 				log.CRPC_log(log.LOGLEVEL_DEBUG, fmt.Sprintf("Worker #%s stopped", worker_identity))
-
 				return nil
 			}
 
@@ -330,7 +330,9 @@ func (srv *Server) acceptRequests(sock *zmq.Socket, worker_identity string) erro
 }
 
 // Handle one request.
-// clientIdentity is the unique number assigned by ZeroMQ. data is the raw data input from the client.
+//
+// clientIdentity is the unique client ID assigned by ZeroMQ. data is the raw data input
+// from the client.
 func (srv *Server) handleRequest(request *workerRequest, sock *zmq.Socket) {
 
 	rqproto := new(proto.RPCRequest)
@@ -374,7 +376,7 @@ func (srv *Server) handleRequest(request *workerRequest, sock *zmq.Socket) {
 
 	cx := srv.newContext(rqproto, srv.rpclogger)
 
-	// Actual invocation!!
+	// Actual invocation of handler!!
 	handler(cx)
 
 	rpproto := cx.toRPCResponse()
