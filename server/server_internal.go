@@ -184,7 +184,7 @@ func (srv *Server) handleWorkerResponse(worker_queue *queue.Queue, request_queue
 
 	} else {
 		worker_queue.Push(message.workerId)
-		_, err := srv.frontend_router.SendMessage(message.message.serializeClientMessage()) // [request identity, client identity, "", RPCResponse]
+		_, err := srv.frontend_router.SendMessage(msgs[2:]) // [request identity, client identity, "", RPCResponse]
 
 		if err != nil {
 			if err.(zmq.Errno) != zmq.EHOSTUNREACH {
