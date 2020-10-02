@@ -427,7 +427,7 @@ func main() {
 	} else if acl {
 		Aclient()
 	} else if clbench > 0 {
-		rpclog.SetLoglevel(rpclog.LOGLEVEL_ERRORS)
+		rpclog.SetLoglevel(rpclog.LOGLEVEL_DEBUG)
 		for i := 0; i < runtime.GOMAXPROCS(0)-1; i++ {
 			go benchClient(clbench)
 		}
