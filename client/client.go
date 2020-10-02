@@ -37,7 +37,14 @@ func NewClient(name string, channel *RpcChannel) Client {
 func New(name string, channel *RpcChannel) Client {
 	rqa := make(chan bool, 1)
 	rqa <- true
-	return Client{name: name, channel: *channel, active: true, request_active: rqa, defaultParams: *NewParams(), filters: default_filters}
+	return Client{
+		name:           name,
+		channel:        *channel,
+		active:         true,
+		request_active: rqa,
+		defaultParams:  *NewParams(),
+		filters:        default_filters,
+	}
 }
 
 // Set socket timeout (default 10s) and whether to propagate this timeout through the call tree.

@@ -18,6 +18,7 @@ func newClientMessage(requestId []byte, clientId []byte, payload []byte) clientM
 
 func parseClientMessage(msg [][]byte) clientMessage {
 	if len(msg) != 4 {
+		log.Println(msg)
 		log.Panic("clientMessage message has != 4 frames!", len(msg))
 	}
 

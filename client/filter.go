@@ -110,13 +110,13 @@ func SendFilter(rq *Request, next int) Response {
 	}
 
 	rq.client.last_sent = time.Now()
-	err = rq.client.channel.sendMessage(payload)
+	err = rq.client.channel.sendMessage(rq.rpcid, payload)
 
 	if err != nil {
 		return Response{err: err}
 	}
 
-	response_payload, err := rq.client.channel.receiveMessage()
+	response_payload, err := rq.client.channel.receiveMessage(rq.rpcid)
 
 	if err != nil {
 		return Response{err: err}

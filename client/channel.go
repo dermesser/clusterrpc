@@ -1,11 +1,12 @@
 package client
 
 import (
+	"errors"
 	"fmt"
-	"github.com/dermesser/clusterrpc/log"
-	smgr "github.com/dermesser/clusterrpc/securitymanager"
 	"time"
 
+	"github.com/dermesser/clusterrpc/log"
+	smgr "github.com/dermesser/clusterrpc/securitymanager"
 	zmq "github.com/pebbe/zmq4"
 )
 
@@ -68,6 +69,7 @@ func (pa *PeerAddress) equals(pa2 PeerAddress) bool {
 // It is (currently) fully managed by ZeroMQ.
 type RpcChannel struct {
 	channel *zmq.Socket
+	timeout time.Duration
 	// Slices to allow multiple connections (round-robin)
 	peers []PeerAddress
 
@@ -110,6 +112,9 @@ func NewRpcChannel(security_manager *smgr.ClientSecurityManager) (*RpcChannel, e
 	//channel.channel.SetReqCorrelate(1)
 
 	channel.clientId = []byte(log.GetLogToken())
+	channel.inFlight = map[string]chan clientResp{}
+
+	go channel.backgroundDispatcher()
 
 	return &channel, nil
 }
@@ -166,6 +171,7 @@ func (c *RpcChannel) Reconnect() {
 
 // Set send/receive timeout on this channel.
 func (c *RpcChannel) SetTimeout(d time.Duration) {
+	c.timeout = d
 	c.channel.SetSndtimeo(d)
 	c.channel.SetRcvtimeo(d)
 }
@@ -174,6 +180,7 @@ func (c *RpcChannel) destroy() {
 	c.channel.Close()
 }
 
+// Sent by the backgroundDispatcher() goroutine to any waiting clients.
 type clientResp struct {
 	resp []byte
 	err  error
@@ -183,26 +190,41 @@ type clientResp struct {
 func (c *RpcChannel) backgroundDispatcher() {
 	for {
 		frames, err := c.channel.RecvMessageBytes(0)
-		ch := c.inFlight[string(frames[0])]
+		log.CRPC_log(log.LOGLEVEL_INFO, "received:", frames, err)
 		if err != nil {
-			ch <- clientResp{err: err}
+			for _, ch := range c.inFlight {
+				ch <- clientResp{err: err}
+			}
+			c.inFlight = map[string]chan clientResp{}
 			continue
 		}
+		ch := c.inFlight[string(frames[0])]
 		if ch == nil {
 			log.CRPC_log(log.LOGLEVEL_ERRORS, "Client not found!")
 		}
-		ch <- clientResp{resp: frames[3]}
+		ch <- clientResp{resp: frames[2]}
 	}
 }
 
-func (c *RpcChannel) sendMessage(request []byte) (string, error) {
-	rqId := log.GetLogToken()
-	ch := make(chan []byte)
+// Send a message, returning a unique request ID and an error.
+func (c *RpcChannel) sendMessage(rqId string, request []byte) error {
+	ch := make(chan clientResp, 1)
 	c.inFlight[rqId] = ch
-	_, err := c.channel.SendMessage(rqId, c.clientId, "", request)
+	log.CRPC_log(log.LOGLEVEL_INFO, "sending:", rqId, "", request)
+	_, err := c.channel.SendMessage(rqId, "", request)
 	return err
 }
 
+// Wait for a response with request ID rqId.
 func (c *RpcChannel) receiveMessage(rqId string) ([]byte, error) {
-	return
+	timeout := time.NewTimer(c.timeout)
+	select {
+	case resp := <-c.inFlight[rqId]:
+		timeout.Stop()
+		log.CRPC_log(log.LOGLEVEL_INFO, "response for client:", rqId, resp)
+		delete(c.inFlight, rqId)
+		return resp.resp, resp.err
+	case <-timeout.C:
+		return nil, errors.New("timeout expired while receiving")
+	}
 }

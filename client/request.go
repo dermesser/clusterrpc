@@ -112,6 +112,9 @@ func (r *Request) Go(payload []byte) Response {
 
 	before := time.Now()
 	timer := time.NewTimer(r.params.timeout)
+	if r.params.timeout > r.client.defaultParams.timeout {
+		r.client.channel.SetTimeout(r.params.timeout)
+	}
 	defer timer.Stop()
 	select {
 	case <-r.client.request_active:
